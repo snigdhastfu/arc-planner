@@ -1,0 +1,51 @@
+/* Arc design tokens: the palette is fixed (SPEC section 11). No light theme. */
+@font-face { font-family: "Fredoka"; src: url("../fonts/Fredoka-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Fredoka"; src: url("../fonts/Fredoka-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Fredoka"; src: url("../fonts/Fredoka-600.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+
+:root {
+  --bg: #000000;
+  --text: #F0EFEF;
+  --muted: #A8A8B0;
+  --vanilla: #FFF7E6;
+  --blush: #F7C8D3;
+  --sage: #A6B58A;
+  --mist: #A9B7C6;
+  --teal: #7CBB93;
+  --navajo: #FDDEB2;
+  --bubblegum: #FF84A2;
+  --platinum: #F0EFEF;
+  --ice: #B3D7F2;
+  --rosewood: #B46A72;
+  --lagoon: #2D3A47;
+  --ink: #111111;
+
+  /* derived greys for hairlines and tracks (neutral, not colours) */
+  --line: #333333;
+  --line-2: #444444;
+  --line-3: #555555;
+  --track: #222222;
+
+  /* roles */
+  --c-exam: var(--bubblegum);
+  --c-assignment: var(--ice);
+  --c-project: var(--mist);
+  --c-event: var(--platinum);
+  --c-morning: var(--navajo);
+  --c-daytime: var(--vanilla);
+  --c-evening: var(--blush);
+  --c-success: var(--teal);
+  --c-warn: var(--rosewood);
+  --c-primary: var(--vanilla);
+
+  --r-card: 32px;
+  --r-tile: 28px;
+  --r-pill: 999px;
+
+  --font: "Fredoka", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  --pad-x: 16px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}

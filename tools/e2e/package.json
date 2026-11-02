@@ -1,0 +1,8 @@
+{
+  "name": "arc-e2e",
+  "private": true,
+  "description": "Dev-only Playwright checks and screenshots for Arc. Never imported by the app.",
+  "type": "module",
+  "scripts": { "test": "node run.mjs" },
+  "devDependencies": { "playwright-core": "^1.50.0" }
+}

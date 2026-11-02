@@ -1,0 +1,35 @@
+{
+  "about": "Sample data reproducing the mockups. Dates are relative: day 0 = the day you load it; min = minutes after midnight.",
+  "doneToday": ["Wake up", "Make bed"],
+  "items": [
+    { "id": "s-lecture", "type": "event", "title": "Lecture", "doodle": "clock", "doodleSource": "auto",
+      "start": { "day": 0, "min": 660 }, "end": { "day": 0, "min": 720 } },
+    { "id": "s-chem", "type": "assignment", "title": "Chem PS4", "doodle": "flask", "doodleSource": "user",
+      "notes": "Organic Chem problem set 4", "due": { "day": 3, "min": 1439 }, "effortMin": 200 },
+    { "id": "s-stats", "type": "exam", "title": "Stats exam", "doodle": "book", "doodleSource": "auto",
+      "topics": ["flashcards", "regression", "probability"], "start": { "day": 9, "min": 540 }, "effortMin": 720 },
+    { "id": "s-project", "type": "project", "title": "Project report", "doodle": "laptop", "doodleSource": "auto",
+      "due": { "day": 13, "min": 1439 }, "effortMin": 600 },
+
+    { "id": "s-wake", "type": "routine", "title": "Wake up", "doodle": "clock", "doodleSource": "auto",
+      "routine": { "anchor": "morning", "group": "morning", "order": 0, "durMin": 2, "detail": "Curtains open, big stretch", "recur": { "freq": "daily", "interval": 1 } } },
+    { "id": "s-bed", "type": "routine", "title": "Make bed", "doodle": "bed", "doodleSource": "auto",
+      "routine": { "anchor": "morning", "group": "morning", "order": 1, "durMin": 2, "detail": "Pillows fluffed", "recur": { "freq": "daily", "interval": 1 } } },
+    { "id": "s-meds", "type": "routine", "title": "Meds", "doodle": "pill", "doodleSource": "auto",
+      "routine": { "anchor": "morning", "group": "morning", "order": 2, "durMin": 2, "detail": "1 softgel, with water", "recur": { "freq": "daily", "interval": 1 } } },
+
+    { "id": "s-water", "type": "routine", "title": "Water", "doodle": "water", "doodleSource": "auto",
+      "routine": { "anchor": "daytime", "atMin": 750, "group": "daytime", "order": 0, "durMin": 2, "detail": "A big glass", "recur": { "freq": "daily", "interval": 1 } } },
+    { "id": "s-lunch", "type": "routine", "title": "Lunch", "doodle": "apple", "doodleSource": "auto",
+      "routine": { "anchor": "daytime", "atMin": 750, "group": "daytime", "order": 1, "durMin": 30, "detail": "Something green on the plate", "recur": { "freq": "daily", "interval": 1 } } },
+    { "id": "s-study", "type": "routine", "title": "Study", "doodle": "book", "doodleSource": "auto",
+      "routine": { "anchor": "daytime", "atMin": 750, "group": "daytime", "order": 2, "durMin": 5, "detail": "Skim today's notes", "recur": { "freq": "weekly", "interval": 1, "days": [1, 2, 3, 4, 5] } } },
+
+    { "id": "s-cream", "type": "routine", "title": "Face cream", "doodle": "cream", "doodleSource": "auto",
+      "routine": { "anchor": "evening", "group": "evening", "order": 0, "durMin": 2, "detail": "After the shower", "recur": { "freq": "daily", "interval": 1 } } },
+    { "id": "s-wind", "type": "routine", "title": "Wind down", "doodle": "moon", "doodleSource": "auto",
+      "routine": { "anchor": "evening", "group": "evening", "order": 1, "durMin": 10, "detail": "Screens off, lights low", "recur": { "freq": "daily", "interval": 1 } } },
+    { "id": "s-plan", "type": "routine", "title": "Plan tomorrow", "doodle": "laptop", "doodleSource": "user",
+      "routine": { "anchor": "evening", "group": "evening", "order": 2, "durMin": 5, "detail": "Peek at the arc for tomorrow", "recur": { "freq": "daily", "interval": 1 } } }
+  ]
+}
