@@ -1,4 +1,4 @@
-// Boot: service worker, wasm core, IndexedDB, then render.
+// Boot: service worker, IndexedDB, wasm core, then render.
 import { loadCore, call } from './bridge.js';
 import { loadDoodles } from './doodle.js';
 import { loadMarks } from './mark.js';
@@ -26,9 +26,10 @@ const bootLine = document.querySelector('.boot-line');
 if (bootLine) bootLine.textContent = pick('loading');
 
 // ---- service worker + update banner --------------------------------------------------
-function registerSW() {
-  if (!('serviceWorker' in navigator)) return;
-  navigator.serviceWorker.register('sw.js', { scope: './' }).then((reg) => {
+async function registerSW() {
+  try {
+    if (!('serviceWorker' in navigator)) return;
+    const reg = await navigator.serviceWorker.register('sw.js', { scope: './' });
     const offer = (w) => { if (w && navigator.serviceWorker.controller) showUpdate(w); };
     if (reg.waiting) offer(reg.waiting);
     reg.addEventListener('updatefound', () => {
@@ -36,11 +37,16 @@ function registerSW() {
       w && w.addEventListener('statechange', () => { if (w.state === 'installed') offer(w); });
     });
     setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
-  }).catch((e) => console.warn('SW registration failed', e));
-  // Reload only when the user asked for the new version (a first install also
-  // fires controllerchange via clients.claim(), and must not reload the page).
-  let reloading = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (userAskedUpdate && !reloading) { reloading = true; location.reload(); } });
+    // Reload only when the user asked for the new version (a first install
+    // also fires controllerchange via clients.claim(), and must not reload).
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (userAskedUpdate && !reloading) { reloading = true; location.reload(); }
+    });
+  } catch (e) {
+    console.warn('SW registration failed', e);
+    if (globalThis.__arcBootReportError) globalThis.__arcBootReportError('Service worker registration failed', e);
+  }
 }
 function showUpdate(worker) {
   const slot = document.getElementById('banner-slot');
@@ -90,20 +96,25 @@ async function show(r, prev) {
 
 // ---- boot ------------------------------------------------------------------------------
 async function boot() {
-  registerSW();
   const t0 = performance.now();
-  const coreP = loadCore(); // compiles in the background; never blocks the shell
-  try {
-    await Promise.all([loadDoodles(), loadMarks(document.body.dataset.logo), initLocal()]);
-  } catch (e) {
-    console.error(e);
-    document.querySelector('.boot-line').textContent = 'Something got tangled while loading. Try reloading.';
-    return;
-  }
-  coreP.then(initCore).then(() => { globalThis.__arcCore = { ms: Math.round(performance.now() - t0) }; }).catch((e) => {
-    console.error(e);
-    toastLater('The planner could not start. Try reloading.');
-  });
+  if (globalThis.__arcBootSetStage) globalThis.__arcBootSetStage('registering the service worker');
+  let swTimer;
+  await Promise.race([
+    registerSW(),
+    new Promise((resolve) => { swTimer = setTimeout(resolve, 1500); }),
+  ]);
+  clearTimeout(swTimer);
+
+  if (globalThis.__arcBootSetStage) globalThis.__arcBootSetStage('reading IndexedDB');
+  await initLocal();
+  if (globalThis.__arcBootSetStage) globalThis.__arcBootSetStage('loading app data');
+  await Promise.all([loadDoodles(), loadMarks(document.body.dataset.logo)]);
+
+  await loadCore();
+  if (globalThis.__arcBootSetStage) globalThis.__arcBootSetStage('reading IndexedDB');
+  await initCore();
+  globalThis.__arcCore = { ms: Math.round(performance.now() - t0) };
+
   motion.set(S.meta.motion || 'full');
   document.body.classList.toggle('gentle', S.meta.motion === 'gentle');
   setSound(!!S.meta.sound);
@@ -115,7 +126,11 @@ async function boot() {
   });
 
   for (const name of Object.keys(screens)) route(name, () => {});
-  onRoute((r, prev) => show(r, prev));
+  let initialRender;
+  onRoute((r, prev) => {
+    const rendering = show(r, prev);
+    if (!prev) initialRender = rendering;
+  });
   subscribe((reason, detail) => {
     if (reason === 'erased') { location.hash = '#/today'; location.reload(); return; }
     if (current && current.api && current.api.update) current.api.update(reason, detail);
@@ -125,19 +140,25 @@ async function boot() {
   const app = document.getElementById('app');
   const bootEl = document.getElementById('boot');
   const minShow = motion.reduced ? 0 : Math.max(0, 450 - (performance.now() - t0));
-  setTimeout(() => {
-    app.hidden = false;
-    start();
-    bootEl.classList.add('out');
-    setTimeout(() => bootEl.remove(), 400);
-    storageBanner();
-    afterStart();
-    globalThis.__arcBoot = { ms: Math.round(performance.now() - t0) };
+  if (globalThis.__arcBootSetStage) globalThis.__arcBootSetStage('starting the app screen');
+  setTimeout(async () => {
+    try {
+      app.hidden = false;
+      start();
+      await initialRender;
+      storageBanner();
+      await afterStart();
+      if (globalThis.__arcBootFinish) globalThis.__arcBootFinish();
+      bootEl.classList.add('out');
+      setTimeout(() => bootEl.remove(), 400);
+      globalThis.__arcBoot = { ms: Math.round(performance.now() - t0) };
+    } catch (e) {
+      if (globalThis.__arcBootReportError) globalThis.__arcBootReportError('Boot failed', e);
+      else throw e;
+    }
   }, minShow);
 
 }
-
-function toastLater(msg) { import('./dom.js').then((d) => d.toast(msg, { ms: 8000 })); }
 
 async function afterStart() {
   // ?add=<text> deep link: open quick add pre-filled (never auto-save)
@@ -161,4 +182,7 @@ async function afterStart() {
 // Debug/e2e hook (read-only helpers).
 globalThis.__arc = { S, call, go };
 
-boot();
+boot().catch((e) => {
+  if (globalThis.__arcBootReportError) globalThis.__arcBootReportError('Boot failed', e);
+  else throw e;
+});

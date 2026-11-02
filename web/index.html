@@ -45,6 +45,36 @@
 <div id="layer" class="layer"></div>
 <div id="live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 <noscript><p style="color:#F0EFEF;font-family:sans-serif;padding:24px">__APP_NAME__ needs JavaScript to run.</p></noscript>
+<script>
+(() => {
+  let finished = false;
+  const line = document.querySelector('.boot-line');
+  const report = (label, error) => {
+    if (finished || !line) return;
+    const details = error && (error.stack || error.message) || String(error);
+    line.textContent = `${label}\n${details}`;
+    line.classList.add('boot-error');
+  };
+  window.__arcBootSetStage = (stage) => {
+    if (!finished) window.__arcBootStage = stage;
+  };
+  window.__arcBootReportError = report;
+  window.__arcBootFinish = () => {
+    finished = true;
+    clearTimeout(window.__arcBootTimeout);
+  };
+  window.onerror = (message, source, row, column, error) => {
+    report('Boot error', error || `${message}\n${source || ''}:${row || 0}:${column || 0}`);
+    return false;
+  };
+  window.onunhandledrejection = (event) => report('Unhandled promise rejection', event.reason);
+  window.__arcBootSetStage('loading wasm_exec.js');
+  window.__arcBootTimeout = setTimeout(() => {
+    const error = new Error(`Boot timed out after 10 seconds while ${window.__arcBootStage || 'starting'}.`);
+    report('Boot timeout', error);
+  }, 10000);
+})();
+</script>
 <script src="wasm_exec.js"></script>
 <script type="module" src="js/main.js"></script>
 </body>

@@ -3,6 +3,7 @@
 
 const DB_NAME = 'arc';
 const DB_VERSION = 1;
+const IDB_TIMEOUT_MS = 4000;
 export const SCHEMA_VERSION = 1;
 const STORES = ['items', 'blocks', 'profile', 'routineLog', 'history', 'postcards', 'meta'];
 
@@ -30,18 +31,34 @@ export async function open() {
     if (!('indexedDB' in globalThis)) throw new Error('no indexedDB');
     db = await new Promise((res, rej) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
+      let settled = false;
+      const finish = (fn, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        fn(value);
+      };
+      const timer = setTimeout(() => finish(rej, new Error('IndexedDB open timed out')), IDB_TIMEOUT_MS);
       req.onupgradeneeded = (e) => migrate(req.result, e.oldVersion);
-      req.onsuccess = () => res(req.result);
-      req.onerror = () => rej(req.error);
-      req.onblocked = () => rej(new Error('blocked'));
+      req.onsuccess = () => {
+        if (settled) req.result.close();
+        else finish(res, req.result);
+      };
+      req.onerror = () => finish(rej, req.error);
+      req.onblocked = () => finish(rej, new Error('IndexedDB open was blocked'));
     });
     const v = await get('meta', 'schemaVersion');
     if (!v) await put('meta', { key: 'schemaVersion', value: SCHEMA_VERSION });
   } catch (e) {
     console.warn('IndexedDB unavailable, running in memory:', e && e.message);
-    db = null;
-    memory = Object.fromEntries(STORES.map((s) => [s, new Map()]));
+    fallbackToMemory();
   }
+}
+
+export function fallbackToMemory() {
+  if (db) db.close();
+  db = null;
+  memory = Object.fromEntries(STORES.map((s) => [s, new Map()]));
 }
 
 function keyOf(store, value, key) {
@@ -59,10 +76,24 @@ function tx(store, mode, fn) {
     const t = db.transaction(store, mode);
     const s = t.objectStore(store);
     let out;
-    Promise.resolve(fn(s)).then((v) => { out = v; });
-    t.oncomplete = () => res(out);
-    t.onerror = () => rej(t.error);
-    t.onabort = () => rej(t.error);
+    let settled = false;
+    const finish = (done, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      done(value);
+    };
+    const timer = setTimeout(() => {
+      finish(rej, new Error('IndexedDB transaction timed out'));
+      try { t.abort(); } catch (_) {}
+    }, IDB_TIMEOUT_MS);
+    Promise.resolve(fn(s)).then((v) => { out = v; }, (e) => {
+      finish(rej, e);
+      try { t.abort(); } catch (_) {}
+    });
+    t.oncomplete = () => finish(res, out);
+    t.onerror = () => finish(rej, t.error);
+    t.onabort = () => finish(rej, t.error);
   });
 }
 const reqP = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });

@@ -37,11 +37,21 @@ const uid = (p = 'it') => `${p}-${(crypto.randomUUID ? crypto.randomUUID() : Str
 const META_DEFAULTS = { onboarded: false, sound: false, logo: document.body.dataset.logo || 'B', motion: 'full', timer: null, undo: null, persistAsked: false };
 
 // ---- boot -----------------------------------------------------------------
-/** Local half of boot: IndexedDB only, so the shell renders before the core. */
+/** Load local data before initializing the planner core. */
 export async function initLocal() {
   await db.open();
   S.persistent = db.persistent();
-  const [items, prof, metas, blocks] = await Promise.all([db.all('items'), db.get('profile', 'profile'), db.all('meta'), db.all('blocks')]);
+  let values;
+  try {
+    values = await Promise.all([db.all('items'), db.get('profile', 'profile'), db.all('meta'), db.all('blocks')]);
+  } catch (e) {
+    if (!S.persistent) throw e;
+    console.warn('IndexedDB read failed during boot; continuing in memory:', e);
+    db.fallbackToMemory();
+    S.persistent = false;
+    values = await Promise.all([db.all('items'), db.get('profile', 'profile'), db.all('meta'), db.all('blocks')]);
+  }
+  const [items, prof, metas, blocks] = values;
   S.items = items;
   S.profile = prof ? prof.value : defaultProfile();
   T.setTZ(S.profile.tz);
@@ -55,7 +65,15 @@ export async function initLocal() {
 export async function initCore() {
   await loadCore();
   try { S.version = call('version').version; } catch (_) { S.version = '?'; }
-  await replan({ quiet: true });
+  try {
+    await replan({ quiet: true });
+  } catch (e) {
+    if (!S.persistent) throw e;
+    console.warn('IndexedDB operation failed during boot; continuing in memory:', e);
+    db.fallbackToMemory();
+    S.persistent = false;
+    await replan({ quiet: true });
+  }
   emit('plan');
 }
 export async function init() { await initLocal(); await initCore(); }

@@ -9,19 +9,36 @@ export function loadCore() {
     if (globalThis.arcReady && globalThis.arc) return globalThis.arc;
     const go = new globalThis.Go();
     let result;
-    try {
-      result = await WebAssembly.instantiateStreaming(fetch('arc.wasm'), go.importObject);
-    } catch (_) {
-      // Wrong MIME type (some static hosts) or no streaming support.
-      const buf = await (await fetch('arc.wasm')).arrayBuffer();
+    if (globalThis.__arcBootSetStage) globalThis.__arcBootSetStage('fetching the .wasm file');
+    const response = await fetch('arc.wasm');
+    if (!response.ok) throw new Error(`Fetching arc.wasm failed: ${response.status} ${response.statusText}`);
+
+    if (globalThis.__arcBootSetStage) globalThis.__arcBootSetStage('WebAssembly.instantiate');
+    if (WebAssembly.instantiateStreaming) {
+      try {
+        result = await WebAssembly.instantiateStreaming(response.clone(), go.importObject);
+      } catch (streamError) {
+        const buf = await response.arrayBuffer();
+        try {
+          result = await WebAssembly.instantiate(buf, go.importObject);
+        } catch (fallbackError) {
+          fallbackError.message += ` (instantiateStreaming also failed: ${streamError.message})`;
+          throw fallbackError;
+        }
+      }
+    } else {
+      const buf = await response.arrayBuffer();
       result = await WebAssembly.instantiate(buf, go.importObject);
     }
     const readyEvt = new Promise((res) => {
       if (globalThis.arcReady) res();
       else globalThis.addEventListener('arc-ready', () => res(), { once: true });
     });
-    go.run(result.instance); // never resolves: main blocks on select{}
-    await readyEvt;
+    if (globalThis.__arcBootSetStage) globalThis.__arcBootSetStage('starting Go');
+    const run = go.run(result.instance);
+    await Promise.race([readyEvt, run.then(() => {
+      throw new Error('The Go runtime exited before the Arc bridge became ready.');
+    })]);
     return globalThis.arc;
   })();
   return ready;
