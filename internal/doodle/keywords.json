@@ -1,0 +1,132 @@
+{
+ "pill": [
+  "meds",
+  "medication",
+  "vitamin",
+  "supplement",
+  "pill",
+  "tablet",
+  "capsule",
+  "magnesium",
+  "omega"
+ ],
+ "flask": [
+  "chem",
+  "chemistry",
+  "lab",
+  "science",
+  "experiment",
+  "organic"
+ ],
+ "book": [
+  "read",
+  "reading",
+  "study",
+  "exam",
+  "textbook",
+  "revise",
+  "revision",
+  "homework"
+ ],
+ "cream": [
+  "cream",
+  "moisturiser",
+  "moisturizer",
+  "skincare",
+  "lotion",
+  "sunscreen",
+  "serum"
+ ],
+ "clock": [
+  "wake",
+  "alarm",
+  "morning",
+  "wake up",
+  "timer"
+ ],
+ "water": [
+  "water",
+  "hydrate",
+  "drink",
+  "glass"
+ ],
+ "sun": [
+  "sun",
+  "outside",
+  "walk",
+  "vitamin d",
+  "daylight",
+  "morning"
+ ],
+ "moon": [
+  "sleep",
+  "night",
+  "wind down",
+  "bedtime",
+  "evening"
+ ],
+ "laptop": [
+  "laptop",
+  "code",
+  "project",
+  "essay",
+  "write",
+  "report",
+  "computer",
+  "assignment"
+ ],
+ "mug": [
+  "coffee",
+  "tea",
+  "mug",
+  "breakfast",
+  "break"
+ ],
+ "bed": [
+  "bed",
+  "make bed",
+  "nap",
+  "rest",
+  "sleep in"
+ ],
+ "apple": [
+  "lunch",
+  "eat",
+  "fruit",
+  "snack",
+  "apple",
+  "meal",
+  "dinner"
+ ],
+ "plant": [
+  "plant",
+  "water plants",
+  "garden",
+  "tidy",
+  "chores"
+ ],
+ "dumbbell": [
+  "gym",
+  "workout",
+  "exercise",
+  "lift",
+  "training",
+  "stretch"
+ ],
+ "pencil": [
+  "write",
+  "notes",
+  "draw",
+  "sketch",
+  "pencil",
+  "worksheet"
+ ],
+ "sparkle": [
+  "clean",
+  "treat",
+  "fun",
+  "reward",
+  "party",
+  "misc"
+ ]
+}

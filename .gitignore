@@ -1,0 +1,8 @@
+dist/
+node_modules/
+tools/e2e/node_modules/
+tools/e2e/traces/
+*.test
+coverage.out
+.DS_Store
+Thumbs.db
