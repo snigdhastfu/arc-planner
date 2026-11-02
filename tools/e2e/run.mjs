@@ -61,12 +61,32 @@ const planned = await S(() => {
   return { id: it && it.id, blocks: S.plan.blocks.filter((b) => b.itemId === (it && it.id) && b.kind === 'work').length };
 });
 ok('quick add saves the item and the planner places blocks', planned.id && planned.blocks >= 4, `${planned.blocks} work blocks`);
+const persistedBlockIDs = await S(() => {
+  const it = globalThis.__arc.S.items.find((i) => i.title === 'Stats assignment');
+  return globalThis.__arc.S.plan.blocks.filter((b) => b.itemId === it.id).map((b) => b.id);
+});
 
 // IndexedDB persists across reload
 await page.reload();
 await booted();
 const persisted = await S(() => globalThis.__arc.S.items.some((i) => i.title === 'Stats assignment'));
 ok('IndexedDB keeps items across a reload', persisted);
+const persistedBlocks = await page.evaluate((ids) => ids.every((id) => globalThis.__arc.S.plan.blocks.some((b) => b.id === id)), persistedBlockIDs);
+ok('planned blocks survive a reload', persistedBlockIDs.length > 0 && persistedBlocks, `${persistedBlockIDs.length} blocks`);
+
+// Personal quick-add text must parse, save, and receive a persisted plan block.
+await page.click('.nav-plus');
+await page.fill('#qa-input', 'study DBMS tomorrow 6pm 90 min');
+await wait(400);
+await page.click('[data-save]');
+await wait(900);
+const customQuickAdd = await S(() => {
+  const item = globalThis.__arc.S.items.find((i) => i.title === 'Study DBMS');
+  const block = item && globalThis.__arc.S.plan.blocks.find((b) => b.itemId === item.id);
+  const proposed = item && globalThis.__arc.S.proposal && globalThis.__arc.S.proposal.proposed.blocks.some((b) => b.itemId === item.id);
+  return { item: !!item, type: item && item.type, scheduled: !!block || !!proposed, start: item && item.start, end: item && item.end };
+});
+ok('custom quick-add text saves its parsed event and plan', customQuickAdd.item && customQuickAdd.scheduled && customQuickAdd.start.includes('18:00') && customQuickAdd.end.includes('19:30'), `${customQuickAdd.type} ${customQuickAdd.start}–${customQuickAdd.end}`);
 
 // ---------------- complete (keyboard path on the focus card) ----------------
 await wait(800);

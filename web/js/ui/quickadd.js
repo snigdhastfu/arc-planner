@@ -103,7 +103,8 @@ export function openQuickAdd({ text = '', from = null } = {}) {
         pop(1.15);
         const added = await addItem({ ...it, id: '' });
         s.close();
-        toast(`${added.title} added.${added.type === 'routine' ? '' : ' It now has blocks on your arc.'}`);
+        const placed = S.plan.blocks.some((block) => block.itemId === added.id);
+        toast(`${added.title} added.${added.type === 'routine' ? '' : placed ? ' It now has blocks on your arc.' : ' Review the proposed block changes to place it.'}`);
         announce(`${added.title} added`);
       });
       async function openForm() {

@@ -47,6 +47,66 @@ go test ./...                 # run the core's tests
 ```
 All of these work the same on Windows, macOS and Linux. Visit `http://localhost:8080/__rebuild` to rebuild without restarting the server.
 
+## Repository structure
+The repo is split between the Go scheduling engine, the browser app shell, design references, and tooling.
+
+```text
+arc/
+├─ .github/workflows/          CI + Pages deploy workflow files
+├─ cmd/
+│  └─ arc-wasm/                Go entry point that exposes the planner to the browser
+├─ internal/
+│  ├─ model/                   shared data types + JSON envelope helpers
+│  ├─ planner/                 scheduling, re-planning and acceptance logic
+│  ├─ parse/                   quick-add natural-language parser
+│  ├─ doodle/                 keyword-to-doodle matching and asset selection
+│  ├─ ics/                    calendar import/export support
+│  ├─ postcard/               end-of-day summary generation
+│  └─ ...                     other Go implementation files
+├─ web/
+│  ├─ css/                    app styling
+│  ├─ data/                   bundled sample JSON and doodle data
+│  ├─ fonts/                  bundled font files
+│  ├─ js/
+│  │  ├─ anim.js              animation helpers
+│  │  ├─ arc.js               planner bridge and app bootstrap
+│  │  ├─ state.js             app state and persistence logic
+│  │  ├─ rough.js             hand-drawn SVG drawing helpers
+│  │  ├─ ui/                  screen-specific browser UI modules
+│  │  └─ ...                  other app logic (router, sound, store, etc.)
+│  ├─ index.html              app shell
+│  ├─ manifest.template.json  PWA manifest template
+│  ├─ offline.html            offline fallback page
+│  ├─ sw.template.js          service worker template
+│  └─ ...
+├─ logos/                      built logo variants for different themes
+├─ reference/
+│  ├─ README.md               reference index
+│  ├─ SPEC.md                 build and product spec
+│  ├─ doodles/                doodle source and keyword definitions
+│  ├─ inspiration/            visual inspiration images
+│  ├─ logos/                  original logo references
+│  └─ mockups/                HTML + PNG mockups for the app screens
+├─ tools/
+│  ├─ build/                  production build tooling
+│  ├─ dev/                    local dev server tooling
+│  └─ e2e/                    Playwright smoke/perf/accessibility checks
+├─ dist/                       generated production build output
+├─ arc.config.json            app name, theme, and selected logo
+├─ go.mod                      Go module definition
+├─ README.md                   project overview and usage docs
+├─ CHANGELOG.md                release notes
+├─ CLAUDE.md                  local Copilot instructions for this repo
+├─ DECISIONS.md                architecture and product decisions
+├─ PROGRESS.md                 ongoing engineering notes
+├─ LICENSE                     MIT license
+├─ .gitignore                  git ignore rules
+├─ .github/                    GitHub Actions and repo automation
+└─ ...                         generated assets and other repo metadata
+```
+
+If you are looking for the highest-value places to read first, start with `internal/planner`, `internal/model`, `web/js`, and the design references in `reference/`.
+
 ## Change the name or logo
 Everything lives in `arc.config.json`:
 ```json

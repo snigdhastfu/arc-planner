@@ -1,4 +1,4 @@
-// First run: wake/sleep -> energy windows -> daily goal, then sample or empty.
+// First run: wake/sleep -> energy windows -> daily goal, then fresh or sample.
 import { S, setProfile, setMeta, loadSample, defaultProfile } from '../state.js';
 import * as T from '../time.js';
 import { doodleSVG } from '../doodle.js';
@@ -38,6 +38,7 @@ export function openOnboarding() {
       };
       const stepDay = () => `<div class="onb-step"><h2 class="sheet-title">Hello! When does your day run?</h2>
         <p class="m sheet-text">Arc plans around you, never the other way round.</p>
+        <label class="field"><span class="m">What should Arc call you? (optional)</span><input class="input" type="text" data-name maxlength="40" value="${esc(p.name || '')}" autocomplete="given-name" placeholder="Your name"></label>
         <div class="row"><label class="field"><span class="m">I wake up</span><input class="input" type="time" data-w value="${hhmm(p.wakeMin)}"></label>
         <label class="field"><span class="m">Lights out</span><input class="input" type="time" data-s value="${hhmm(p.sleepMin)}"></label></div></div>`;
       const stepEnergy = () => `<div class="onb-step"><h2 class="sheet-title">When do you feel sharpest?</h2>
@@ -47,8 +48,8 @@ export function openOnboarding() {
         <p class="m sheet-text">A comfy goal. Busy days can stretch a little, and Arc will say so.</p>
         <div class="stepper" style="justify-content:center"><button type="button" data-g="-30" aria-label="Less">−</button><output data-gout style="font-size:28px">${T.hours(p.ambitionMin)}</output><button type="button" data-g="30" aria-label="More">+</button></div></div>`;
       const stepStart = () => `<div class="onb-step"><h2 class="sheet-title">All set. How would you like to start?</h2>
-        <p class="m sheet-text">Peek at a sample student week, or start with a blank page. You can change your mind in Settings.</p>
-        <div class="sheet-actions"><button class="btn btn-primary" data-sample>Show me a sample week</button><button class="btn btn-ghost" data-empty>Start empty</button></div></div>`;
+        <p class="m sheet-text">Start with a blank planner, or explore a marked sample week. You can remove sample data any time in Settings.</p>
+        <div class="sheet-actions"><button class="btn btn-primary" data-empty>Start fresh</button><button class="btn btn-ghost" data-sample>Show me a sample week</button></div></div>`;
       const energy = () => {
         const w = p.wakeMin, sl = p.sleepMin;
         const cuts = [w, Math.min(w + 150, sl), Math.min(12 * 60 + 30, sl), Math.min(16 * 60, sl), Math.min(20 * 60, sl), sl];
@@ -58,7 +59,7 @@ export function openOnboarding() {
         return out;
       };
       const finish = async (sample) => {
-        await setProfile({ ...p, energy: energy() }, { rebuild: false });
+        await setProfile({ ...p, name: (p.name || '').trim(), energy: energy() }, { rebuild: false });
         if (sample) await loadSample();
         await setMeta('onboarded', true);
         const r = s.el.getBoundingClientRect();
@@ -74,13 +75,14 @@ export function openOnboarding() {
         if (b.dataset.g) { p.ambitionMin = Math.max(30, Math.min(600, p.ambitionMin + Number(b.dataset.g))); box.querySelector('[data-gout]').textContent = T.hours(p.ambitionMin); return; }
         if (b.hasAttribute('data-next')) {
           if (step === 0) {
+            p.name = box.querySelector('[data-name]').value.trim().slice(0, 40);
             const w = toMin(box.querySelector('[data-w]').value || '07:00'), sl = toMin(box.querySelector('[data-s]').value || '23:00');
             if (sl <= w + 120) { toast('Leave at least two hours between waking and lights out.'); return; }
             p.wakeMin = w; p.sleepMin = sl;
           }
           step++; draw(); return;
         }
-        if (b.hasAttribute('data-skip')) { await setMeta('onboarded', true); s.close(); return; }
+        if (b.hasAttribute('data-skip')) { step = 3; draw(); return; }
         if (b.hasAttribute('data-sample')) return finish(true);
         if (b.hasAttribute('data-empty')) return finish(false);
       });

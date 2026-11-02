@@ -44,7 +44,9 @@ export function setActive(tab, instant = false) {
   });
   const squig = nav.querySelector('.nav-squiggle');
   const btn = nav.querySelector(`.nav-tab[data-tab="${tab}"]`);
-  nav.classList.toggle('nav-hidden', tab === 'guided' || tab === 'review');
+  const hidden = tab === 'guided' || tab === 'review';
+  nav.classList.toggle('nav-hidden', hidden);
+  document.getElementById('screen')?.classList.toggle('screen-nav-hidden', hidden);
   if (!btn || !squig) { if (squig) squig.style.opacity = '0'; return; }
   squig.style.opacity = '1';
   const nr = nav.getBoundingClientRect(), br = btn.getBoundingClientRect();

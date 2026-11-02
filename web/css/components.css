@@ -37,16 +37,18 @@ svg.doodle { display: block; flex: none; }
 
 /* ---- nav ---- */
 .nav {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  position: fixed; left: var(--safe-left); right: var(--safe-right); bottom: 0; z-index: 20;
   display: flex; justify-content: space-around; align-items: center;
-  padding: 10px max(16px, var(--safe-left)) calc(20px + var(--safe-bottom));
+  padding: 10px max(16px, calc(16px + var(--safe-right))) calc(20px + var(--safe-bottom)) max(16px, calc(16px + var(--safe-left)));
   max-width: 430px; margin: 0 auto;
+  min-height: calc(82px + var(--safe-bottom));
   background: linear-gradient(to top, #000 70%, rgba(0,0,0,0));
 }
 .nav-hidden { transform: translateY(140%); transition: transform .3s; }
 .nav-tab { background: none; border: 0; color: var(--muted); font-size: 14px; min-height: 44px; min-width: 64px; position: relative; transition: color .2s; }
 .nav-tab.on { color: var(--vanilla); font-weight: 600; }
 .nav-plus { width: 52px; height: 52px; border-radius: 26px; background: var(--vanilla); color: var(--ink); border: 0; font-size: 28px; line-height: 1; padding: 0 0 3px; flex: none; }
+.nav-plus { margin-bottom: var(--safe-bottom); }
 .nav-squiggle { position: absolute; left: 0; bottom: calc(16px + var(--safe-bottom)); pointer-events: none; }
 
 /* ---- banners & toasts ---- */
@@ -62,19 +64,20 @@ svg.doodle { display: block; flex: none; }
 .toast-btn { background: none; border: 0; color: var(--vanilla); font-weight: 600; min-height: 44px; padding: 0 6px; }
 
 /* ---- sheets ---- */
-.sheet-wrap { position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+.sheet-wrap { position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-end; justify-content: center; padding: var(--safe-top) var(--safe-right) 0 var(--safe-left); }
 .sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.72); }
 .sheet {
-  position: relative; width: 100%; max-width: 430px; max-height: calc(92dvh - var(--safe-top));
+  position: relative; width: 100%; max-width: 430px; max-height: calc(92vh - var(--safe-top));
+  max-height: calc(92dvh - var(--safe-top));
   background: #000; border-radius: 32px 32px 0 0; padding: 8px 20px calc(24px + var(--safe-bottom));
   display: flex; flex-direction: column; touch-action: none; overflow: hidden;
 }
-.sheet-tall { min-height: 70dvh; }
+.sheet-tall { min-height: 70vh; min-height: 70dvh; }
 .sheet > :not(svg.rough) { position: relative; z-index: 1; }
 .sheet-grab { display: flex; justify-content: center; padding: 6px 0 10px; cursor: grab; }
 .sheet-grab span { width: 40px; height: 5px; border-radius: 3px; background: var(--line-3); }
 .sheet-title { font-size: 22px; font-weight: 600; margin: 0 0 12px; }
-.sheet-body { overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 12px; padding-bottom: 4px; }
+.sheet-body { min-width: 0; overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 12px; padding-bottom: 4px; }
 .sheet-text { margin: 0; font-size: 15px; line-height: 1.4; }
 .sheet-actions { display: flex; flex-direction: column; gap: 4px; align-items: stretch; margin-top: 8px; }
 
@@ -86,8 +89,8 @@ svg.doodle { display: block; flex: none; }
 }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--vanilla); outline: none; }
 .textarea { min-height: 80px; resize: vertical; }
-.row { display: flex; gap: 10px; align-items: center; }
-.row > * { flex: 1; }
+.row { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.row > * { flex: 1 1 0; min-width: 0; }
 .seg { display: flex; gap: 6px; flex-wrap: wrap; }
 .seg button { min-height: 44px; padding: 0 14px; border-radius: 20px; border: 1.5px solid var(--line-2); background: none; color: var(--muted); font-size: 14px; }
 .seg button[aria-pressed="true"] { border-color: var(--vanilla); color: var(--ink); background: var(--vanilla); font-weight: 600; }
@@ -95,15 +98,16 @@ svg.doodle { display: block; flex: none; }
 .stepper button { width: 44px; height: 44px; border-radius: 22px; border: 1.5px solid var(--line-2); background: none; font-size: 20px; color: var(--text); flex: none; }
 .stepper output { min-width: 72px; text-align: center; font-size: 18px; font-weight: 600; }
 .switch { display: flex; align-items: center; justify-content: space-between; min-height: 48px; gap: 12px; }
-.switch button::before { content: ""; position: absolute; inset: -6px -4px; }
-.switch button { width: 56px; height: 32px; border-radius: 16px; border: 0; background: var(--line); position: relative; flex: none; }
-.switch button::after { content: ""; position: absolute; top: 4px; left: 4px; width: 24px; height: 24px; border-radius: 12px; background: var(--muted); transition: transform .25s cubic-bezier(.3,1.4,.5,1), background .2s; }
-.switch button[aria-checked="true"] { background: var(--teal); }
-.switch button[aria-checked="true"]::after { transform: translateX(24px); background: var(--ink); }
+.switch button { width: 56px; height: 44px; border-radius: 22px; border: 0; background: transparent; position: relative; flex: none; }
+.switch button::after { content: ""; position: absolute; top: 6px; left: 0; width: 56px; height: 32px; border-radius: 16px; background: var(--line); transition: background .2s; }
+.switch button::before { content: ""; position: absolute; z-index: 1; top: 10px; left: 4px; width: 24px; height: 24px; border-radius: 12px; background: var(--muted); transition: transform .25s cubic-bezier(.3,1.4,.5,1), background .2s; }
+.switch button[aria-checked="true"] { background: transparent; }
+.switch button[aria-checked="true"]::after { background: var(--teal); }
+.switch button[aria-checked="true"]::before { transform: translateX(24px); background: var(--ink); }
 
 /* ---- chips (quick add) ---- */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; min-height: 36px; }
-.chip { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 18px; border: 1.5px solid var(--line-2); background: none; color: var(--text); font-size: 13px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border-radius: 18px; border: 1.5px solid var(--line-2); background: none; color: var(--text); font-size: 13px; }
 .chip { position: relative; }
 .chip::after { content: ""; position: absolute; inset: -4px 0; }
 .chip b { color: var(--muted); font-weight: 500; }

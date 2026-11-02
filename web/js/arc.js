@@ -1,10 +1,10 @@
-// Day Arc geometry (SPEC section 11). x maps WakeMin..SleepMin to 10..350 in a
-// 358x200 viewBox; y comes from the energy windows (high=50, med=110,
+// Day Arc geometry (SPEC section 11). x maps WakeMin..SleepMin to 40..318 in a
+// 358x200 viewBox, leaving room for the now marker; y comes from energy windows (high=50, med=110,
 // low=170), smoothstep-blended ~40 min at boundaries, sampled every 10 min,
 // and drawn as Catmull-Rom -> cubic Bezier. Nodes are evaluated on the same
 // spline, so they always sit exactly on the curve.
 
-export const VIEW = { w: 358, h: 200, x0: 10, x1: 350 };
+export const VIEW = { w: 358, h: 200, x0: 40, x1: 318 };
 const LEVEL_Y = { high: 50, med: 110, low: 170 };
 const EDGE_Y = 175;
 const BLEND = 80; // minutes each side of the smoothing window

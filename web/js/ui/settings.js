@@ -1,5 +1,6 @@
 // Settings: day shape, energy, calendar, backup, feel, data, postcards, about.
-import { S, setProfile, setMeta, loadSample, eraseEverything, exportBackup, validateBackup, importBackup, postcards, defaultProfile } from '../state.js';
+import { S, setProfile, setMeta, loadSample, clearSampleData, eraseEverything, exportBackup, validateBackup, importBackup, postcards, defaultProfile } from '../state.js';
+import { storageStatus } from '../store.js';
 import * as T from '../time.js';
 import { doodleSVG } from '../doodle.js';
 import { drawOn, observeBoil, forgetBoil, motion, set, to } from '../anim.js';
@@ -16,8 +17,9 @@ const LV_LABEL = { high: 'peak', med: 'okay', low: 'low' };
 
 export function mount(el) {
   root = el;
+  addEventListener('arc-storagechange', renderStorage);
   render();
-  return { update: (reason) => { if (reason === 'profile' || reason === 'plan') renderDay(); }, unmount: () => { forgetBoil(el); root = null; } };
+  return { update: (reason) => { if (reason === 'profile' || reason === 'plan') { renderDay(); renderEnergy(); } }, unmount: () => { removeEventListener('arc-storagechange', renderStorage); forgetBoil(el); root = null; } };
 }
 
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -43,7 +45,7 @@ function render() {
     <header class="hdr"><div><div class="m">Make it yours</div><h1 class="h">Settings</h1></div><a class="mark-btn" href="#/today" aria-label="Back to Today">${markSVG()}</a></header>
     <div class="settings-list">
       ${card('day', 'Your day', 'clock', '#FDDEB2', `<div data-day-body></div>`)}
-      ${card('energy', 'Energy through the day', 'sun', '#7CBB93', `<p class="m" style="margin:0">Tap an hour to cycle peak → okay → low. Deep work goes to peaks first.</p><div class="energy-bar" data-energy role="group" aria-label="Energy by hour"></div><div class="m" data-energy-legend></div>`)}
+      ${card('energy', 'Energy through the day', 'sun', '#7CBB93', `<p class="m" style="margin:0">Set your morning, daytime and evening energy. Tap an hour for finer adjustments.</p><div class="energy-periods" data-energy-periods role="group" aria-label="Energy windows"></div><div class="energy-bar" data-energy role="group" aria-label="Energy by hour"></div><div class="m" data-energy-legend></div>`)}
       ${card('cal', 'Calendar (.ics)', 'book', '#B3D7F2', `
         <label class="btn btn-ghost" style="cursor:pointer">Import timetable (.ics)<input type="file" accept=".ics,text/calendar" data-ics hidden></label>
         <div data-ics-preview></div>
@@ -63,8 +65,11 @@ function render() {
         <p class="m" style="margin:0">This changes the mark inside the app. The home-screen icon comes from <code>arc.config.json</code>: run <code>go run ./tools/build -logo C</code>.</p>`)}
       ${card('cards', 'Postcards', 'moon', '#F7C8D3', `<div class="postcard-grid" data-cards></div><button class="btn btn-ghost" type="button" data-tuck>Tuck in today</button>`)}
       ${card('data', 'Data', 'plant', '#A6B58A', `
-        <button class="btn btn-ghost" type="button" data-sample>Load sample data</button>
+        <p class="m" data-sample-state>${S.items.some((i) => i.sample || i.id.startsWith('s-')) ? 'A sample week is loaded and marked. Clear sample data removes only those sample items.' : 'Your planner is personal to this device.'}</p>
+        <button class="btn btn-ghost" type="button" data-sample>Show me a sample week</button>
+        <button class="btn btn-ghost" type="button" data-clear-sample ${S.items.some((i) => i.sample || i.id.startsWith('s-')) ? '' : 'disabled'}>Clear sample data</button>
         <button class="btn btn-ghost" type="button" data-erase>Erase everything</button>`)}
+      ${card('storage', 'Device storage', 'laptop', '#A9B7C6', `<div data-storage-status role="status"></div>`)}
       ${card('about', 'About', 'pencil', '#FFF7E6', `
         <p class="m" style="margin:0;line-height:1.5">Arc ${esc(S.version)} · all your data stays on this device. No accounts, no tracking, no servers.${repo ? ` <a href="${esc(repo)}" style="color:var(--vanilla)" target="_blank" rel="noopener">Source code</a>` : ''}</p>
         <button class="btn btn-text" type="button" data-onboard>Replay the welcome</button>`)}
@@ -75,6 +80,7 @@ function render() {
   });
   renderDay();
   renderEnergy();
+  renderStorage();
   renderCards();
   observeBoil(root);
   wire();
@@ -87,6 +93,7 @@ function renderDay() {
   const ov = (p.dayOverrides || {})[today];
   const mode = ov === undefined ? 'normal' : ov < p.ambitionMin ? 'light' : ov > p.ambitionMin ? 'push' : 'normal';
   root.querySelector('[data-day-body]').innerHTML = `
+    <label class="field"><span class="m">Your name</span><input class="input" type="text" data-name maxlength="40" value="${esc(p.name || '')}" autocomplete="given-name" placeholder="Your name"></label>
     <div class="row"><label class="field"><span class="m">Wake up</span><input class="input" type="time" data-wake value="${hhmm(p.wakeMin)}"></label>
     <label class="field"><span class="m">Lights out</span><input class="input" type="time" data-sleep value="${hhmm(p.sleepMin)}"></label></div>
     <div class="field"><span class="m">Daily deep-work goal</span><div class="stepper"><button type="button" data-amb="-30" aria-label="Lower goal">−</button><output>${T.hours(p.ambitionMin)}</output><button type="button" data-amb="30" aria-label="Raise goal">+</button></div></div>
@@ -98,11 +105,65 @@ function renderDay() {
 function renderEnergy() {
   const p = S.profile;
   const bar = root.querySelector('[data-energy]');
+  const periodBar = root.querySelector('[data-energy-periods]');
+  const bounds = energyBounds(p);
+  periodBar.innerHTML = bounds.map(({ name, label, start, end }) => {
+    const level = p.energy.find((w) => (start + end) / 2 >= w.startMin && (start + end) / 2 < w.endMin);
+    const value = level ? level.level : 'med';
+    const text = LV_LABEL[value];
+    return `<button type="button" class="lvl-${value}" data-energy-period="${name}" aria-label="${label} ${T.clockMin(start)} to ${T.clockMin(end)}: ${text} energy">${label}<br>${text}</button>`;
+  }).join('');
   const hours = [];
   for (let m = Math.floor(p.wakeMin / 60) * 60; m < p.sleepMin; m += 60) hours.push(m);
   const lvl = (m) => { const w = p.energy.find((e) => m + 30 >= e.startMin && m + 30 < e.endMin); return w ? w.level : 'med'; };
   bar.innerHTML = hours.map((m) => `<button type="button" class="lvl-${lvl(m)}" data-hour="${m}" aria-label="${T.clockMin(m)}: ${LV_LABEL[lvl(m)]} energy">${T.clockMin(m).replace(' ', '')}</button>`).join('');
   root.querySelector('[data-energy-legend]').innerHTML = '<span style="color:var(--teal)">■</span> peak &nbsp; <span style="color:var(--navajo)">■</span> okay &nbsp; <span style="color:var(--lagoon);-webkit-text-stroke:1px var(--mist)">■</span> low';
+}
+
+function energyBounds(p) {
+  const span = p.sleepMin - p.wakeMin;
+  const first = span < 180 ? p.wakeMin + Math.round(span / 3) : Math.max(p.wakeMin + 60, Math.min(12 * 60, p.sleepMin - 120));
+  const second = span < 180 ? p.wakeMin + Math.round(span * 2 / 3) : Math.max(first + 60, Math.min(17 * 60, p.sleepMin - 60));
+  return [
+    { name: 'morning', label: 'Morning', start: p.wakeMin, end: first },
+    { name: 'daytime', label: 'Daytime', start: first, end: second },
+    { name: 'evening', label: 'Evening', start: second, end: p.sleepMin },
+  ].filter((w) => w.end > w.start);
+}
+
+function updateEnergyPeriod(p, period, level) {
+  const target = energyBounds(p).find((w) => w.name === period);
+  if (!target) return p.energy;
+  const points = new Set([p.wakeMin, p.sleepMin, target.start, target.end]);
+  p.energy.forEach((w) => { points.add(Math.max(p.wakeMin, w.startMin)); points.add(Math.min(p.sleepMin, w.endMin)); });
+  const cuts = [...points].filter((m) => m >= p.wakeMin && m <= p.sleepMin).sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i < cuts.length - 1; i++) {
+    const startMin = cuts[i], endMin = cuts[i + 1], mid = (startMin + endMin) / 2;
+    const existing = p.energy.find((w) => mid >= w.startMin && mid < w.endMin);
+    const nextLevel = mid >= target.start && mid < target.end ? level : (existing ? existing.level : 'med');
+    const previous = out[out.length - 1];
+    if (previous && previous.level === nextLevel) previous.endMin = endMin;
+    else out.push({ startMin, endMin, level: nextLevel });
+  }
+  return out;
+}
+
+function renderStorage() {
+  if (!root) return;
+  const box = root.querySelector('[data-storage-status]');
+  if (!box) return;
+  const status = storageStatus();
+  const descriptions = {
+    indexedDB: 'IndexedDB is active and saves your planner on this device.',
+    localStorage: 'IndexedDB is unavailable. Local storage is saving your planner on this device.',
+    memory: 'Memory-only mode: changes will be lost when this tab closes.',
+    switching: 'Switching to fallback storage…',
+    opening: 'Opening browser storage…',
+  };
+  box.innerHTML = `<p class="m" style="margin:0">${esc(descriptions[status.backend] || status.backend)}</p>
+    ${status.idbError ? `<p class="m" style="margin:0">IndexedDB error: <b>${esc(status.idbError.name)}</b>: ${esc(status.idbError.message)}</p>` : ''}
+    <p class="m" style="margin:0">Keep this device's storage: ${esc(status.persist)}.</p>`;
 }
 
 async function renderCards() {
@@ -136,12 +197,16 @@ function wire() {
   // property handlers (not addEventListener): #screen is shared across routes
   root.onchange = async (e) => {
     const t = e.target;
+    if (t.matches('[data-name]')) {
+      await setProfile({ ...S.profile, name: t.value.trim().slice(0, 40) });
+      toast(S.profile.name ? `Hey ${S.profile.name}. Nice to meet you.` : 'Name cleared.');
+    }
     if (t.matches('[data-wake], [data-sleep]')) {
       const p = { ...S.profile, wakeMin: toMin(root.querySelector('[data-wake]').value || '07:00'), sleepMin: toMin(root.querySelector('[data-sleep]').value || '23:00') };
       if (p.sleepMin <= p.wakeMin + 120) { toast('Leave at least two hours between waking and lights out.'); renderDay(); return; }
       await setProfile(p);
       renderEnergy();
-      toast('Day reshaped. Future blocks found new spots.');
+      toast('Day shape saved. Review any proposed block changes before they move.');
     }
     if (t.matches('[data-ics]') && t.files[0]) return previewIcs(t.files[0], t);
     if (t.matches('[data-restore]') && t.files[0]) return restore(t.files[0], t);
@@ -173,6 +238,13 @@ function wire() {
         await setProfile({ ...S.profile, energy: energyFromHours(S.profile, levels) });
         announce('Energy updated.');
       }, 700);
+    }
+    if (b.dataset.energyPeriod) {
+      const current = b.className.replace('lvl-', '');
+      const next = LV[(LV.indexOf(current) + 1) % LV.length];
+      await setProfile({ ...S.profile, energy: updateEnergyPeriod(S.profile, b.dataset.energyPeriod, next) });
+      renderEnergy();
+      announce(`${b.dataset.energyPeriod} energy set to ${LV_LABEL[next]}.`);
     }
     if (b.dataset.inc) b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
     if (b.hasAttribute('data-ics-export')) {
@@ -209,6 +281,11 @@ function wire() {
     if (b.hasAttribute('data-sample')) {
       const ok = !S.items.some((i) => !i.deleted) || await confirmSheet({ title: 'Load sample data?', text: 'This replaces your items and plan with the sample student week. Back up first if you want to keep them.', yes: 'Load sample', no: 'Keep mine' });
       if (ok) { await loadSample(); toast('Sample week loaded.'); go('today'); }
+    }
+    if (b.hasAttribute('data-clear-sample')) {
+      const count = await clearSampleData();
+      render();
+      toast(count ? `${count} sample items cleared. Your own items are still here.` : 'There is no sample data to clear.');
     }
     if (b.hasAttribute('data-erase')) {
       const ok = await confirmSheet({ title: 'Erase everything?', text: 'Every item, plan, postcard and setting on this device goes away. This cannot be undone.', yes: 'Erase everything', no: 'Keep it all', typed: 'ERASE' });

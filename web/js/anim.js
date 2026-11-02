@@ -202,7 +202,12 @@ export function flip(root, mutate, { selector = '[data-flip]', preset = 'default
 /** Same-document View Transition with a spring-fade fallback. */
 export function viewTransition(mutate) {
   if (document.startViewTransition && !motion.reduced) {
-    try { return document.startViewTransition(mutate).finished.catch(() => {}); } catch (_) { /* fall through */ }
+    try {
+      const transition = document.startViewTransition(mutate);
+      if (transition.updateCallbackDone) transition.updateCallbackDone.catch(() => {});
+      if (transition.ready) transition.ready.catch(() => {});
+      return transition.finished.catch(() => {});
+    } catch (_) { /* fall through */ }
   }
   mutate();
   return Promise.resolve();

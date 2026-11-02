@@ -1,5 +1,5 @@
 // Item editor: type-specific fields, doodle picker, effort steppers, soft delete.
-import { S, addItem, updateItem, deleteItem, reorderRoutines } from '../state.js';
+import { S, addItem, updateItem, deleteItem, reorderRoutines, editBlock } from '../state.js';
 import { call } from '../bridge.js';
 import * as T from '../time.js';
 import { doodleSVG } from '../doodle.js';
@@ -18,7 +18,7 @@ const toTime = (iso) => { if (!iso) return ''; const m = T.minOfDay(new Date(iso
 const minOf = (hhmm) => { const [h, m] = (hhmm || '0:0').split(':').map(Number); return h * 60 + (m || 0); };
 const isoAt = (date, time) => (date ? T.iso(T.at(date, minOf(time || '00:00'))) : '');
 
-export function openEditor(item = {}, { isNew = !item.id } = {}) {
+export function openEditor(item = {}, { isNew = !item.id, block = null } = {}) {
   const today = T.dayKey();
   let it = JSON.parse(JSON.stringify({ type: 'assignment', title: '', doodleSource: 'auto', ...item }));
   if (it.type === 'routine' && !it.routine) it.routine = { anchor: 'morning', durMin: 2, order: 99, recur: { freq: 'daily', interval: 1 } };
@@ -67,6 +67,12 @@ export function openEditor(item = {}, { isNew = !item.id } = {}) {
         <label class="field"><span class="m">Day</span><input class="input" type="date" name="d1" value="${toDate(it.start)}"></label>
         <div class="row"><label class="field"><span class="m">Starts</span><input class="input" type="time" name="t1" value="${toTime(it.start)}"></label>
         <label class="field"><span class="m">Ends</span><input class="input" type="time" name="t2" value="${toTime(it.end)}"></label></div>` : ''}
+      ${block && it.type !== 'event' ? `
+        <div class="field"><span class="m">This block</span>
+          <div class="row"><label class="field"><span class="m">Day</span><input class="input" type="date" name="blockDay" value="${toDate(block.start)}"></label>
+          <label class="field"><span class="m">Starts</span><input class="input" type="time" name="blockTime" value="${toTime(block.start)}"></label></div>
+          <label class="field"><span class="m">Duration (minutes)</span><input class="input" type="number" name="blockDuration" min="1" max="1440" value="${T.minutesBetween(block.start, block.end)}"></label>
+        </div>` : ''}
       ${it.type === 'routine' ? `
         <div class="field"><span class="m">When</span><div class="seg" role="group" aria-label="When">${ANCHORS.map(([k, l]) => `<button type="button" data-anchor="${k}" aria-pressed="${r.anchor === k}">${l}</button>`).join('')}</div></div>
         ${r.anchor === 'time' || r.anchor === 'daytime' ? `<label class="field"><span class="m">${r.anchor === 'time' ? 'At' : 'Around (optional)'}</span><input class="input" type="time" name="at" value="${r.atMin != null ? `${String(Math.floor(r.atMin / 60)).padStart(2, '0')}:${String(r.atMin % 60).padStart(2, '0')}` : ''}"></label>` : ''}
@@ -175,6 +181,12 @@ export function openEditor(item = {}, { isNew = !item.id } = {}) {
         await addItem(it);
         toast(`${it.title} added.`);
       } else {
+        if (block && it.type !== 'event') {
+          const date = v('blockDay'), time = v('blockTime');
+          if (!date || !time) { toast('Choose a day and start time for this block.'); return; }
+          try { await editBlock(block.id, isoAt(date, time), Number(v('blockDuration'))); }
+          catch (e) { toast(e.message); return; }
+        }
         await updateItem(it);
         toast('Saved.');
       }

@@ -10,6 +10,8 @@ import { setSound } from './sound.js';
 import { pick } from './copy.js';
 import { closeAllSheets } from './ui/sheet.js';
 import { roughBorder } from './rough.js';
+import { storageStatus } from './store.js';
+import { toast } from './dom.js';
 
 const screens = {
   today: () => import('./ui/today.js'),
@@ -63,15 +65,57 @@ function showUpdate(worker) {
 }
 
 function storageBanner() {
-  if (S.persistent) return;
   const slot = document.getElementById('banner-slot');
+  const existing = slot.querySelector('[data-storage]');
+  if (S.persistent) { if (existing) existing.remove(); return; }
+  const message = S.storage.backend === 'memory'
+    ? 'Arc is running in memory only. Your changes will not survive closing this tab.'
+    : 'Arc is using local storage because IndexedDB is unavailable.';
+  if (existing) { existing.textContent = message; return; }
   const d = document.createElement('div');
   d.className = 'banner';
   d.setAttribute('role', 'status');
-  d.textContent = "Private mode: Arc is running in memory, so things won't be saved after you close it.";
+  d.dataset.storage = '';
+  d.textContent = message;
   slot.appendChild(d);
   roughBorder(d, { color: 'var(--navajo)', width: 1.5, radius: 20, seed: 'mem' });
 }
+
+function sampleBanner() {
+  const slot = document.getElementById('banner-slot');
+  const existing = slot.querySelector('[data-sample-banner]');
+  const hasSample = S.items.some((item) => item.sample || item.id.startsWith('s-'));
+  if (!hasSample) { if (existing) existing.remove(); return; }
+  if (existing) return;
+  const d = document.createElement('button');
+  d.className = 'banner';
+  d.type = 'button';
+  d.dataset.sampleBanner = '';
+  d.textContent = 'Sample week is loaded. Tap to manage sample data in Settings.';
+  slot.appendChild(d);
+  roughBorder(d, { color: 'var(--teal)', width: 1.5, radius: 20, seed: 'sample' });
+  d.addEventListener('click', () => go('settings'));
+}
+
+function memoryNotice() {
+  if (S.storage.backend !== 'memory') return;
+  let shown = false;
+  try { shown = sessionStorage.getItem('arc-memory-notice') === 'shown'; } catch (_) {}
+  if (shown) return;
+  try { sessionStorage.setItem('arc-memory-notice', 'shown'); } catch (_) {}
+  const error = S.storage.idbError;
+  const reason = error ? `${error.name}: ${error.message}` : 'IndexedDB and localStorage are unavailable.';
+  toast(`Arc is in memory-only mode. IndexedDB failed: ${reason}`, { ms: 9000 });
+}
+
+addEventListener('arc-storagechange', () => {
+  S.storage = storageStatus();
+  S.persistent = S.storage.backend === 'indexedDB';
+  if (globalThis.__arcBoot) {
+    storageBanner();
+    memoryNotice();
+  }
+});
 
 // ---- routing --------------------------------------------------------------------------
 async function show(r, prev) {
@@ -134,6 +178,7 @@ async function boot() {
   subscribe((reason, detail) => {
     if (reason === 'erased') { location.hash = '#/today'; location.reload(); return; }
     if (current && current.api && current.api.update) current.api.update(reason, detail);
+    if (reason === 'plan' || reason === 'item-added' || reason === 'item-edited' || reason === 'items-cleared') sampleBanner();
   });
 
   // reveal: let the boot doodle finish its stroke at least briefly
@@ -147,6 +192,8 @@ async function boot() {
       start();
       await initialRender;
       storageBanner();
+      sampleBanner();
+      memoryNotice();
       await afterStart();
       if (globalThis.__arcBootFinish) globalThis.__arcBootFinish();
       bootEl.classList.add('out');

@@ -8,7 +8,7 @@ import { drag } from '../gestures.js';
 import { roughBorder, roughLine, tilt } from '../rough.js';
 import { esc, announce, toast, itemHex, groupOf, squishy, CHECK } from '../dom.js';
 import { pick } from '../copy.js';
-import { burst, stamp, floatDoodle, react } from '../fx.js';
+import { burst, stamp, floatDoodle, react, clearFx } from '../fx.js';
 import { pop, chime, scratch, buzz } from '../sound.js';
 import { go } from '../router.js';
 import { markSVG } from '../mark.js';
@@ -23,6 +23,7 @@ let opened = null; // open detail card
 let busy = false;
 
 const GROUP_LABEL = { morning: 'Morning', daytime: 'Daytime', evening: 'Evening' };
+const FOCUS_FX = 'focus-card';
 
 // ---- data ---------------------------------------------------------------------
 function todayBlocks() {
@@ -52,17 +53,17 @@ function arcNodes() {
       continue;
     }
     const mins = T.minutesBetween(s, e);
-    out.push({ id: b.id, kind: b.kind, block: b, item: it, mid, r: nodeRadius(mins), color: itemHex(it), doodle: it.doodle, label: shortLabel(it.title), done: b.status === 'done' });
+    out.push({ id: b.id, kind: b.kind, block: b, item: it, mid, r: nodeRadius(mins), color: itemHex(it), doodle: it.doodle, labelFull: it.title, label: shortLabel(it.title), done: b.status === 'done' });
   }
   for (const g of groups.values()) {
     const todo = g.blocks.filter((x) => x.b.status !== 'done');
     const lead = todo[0] || g.blocks[g.blocks.length - 1];
     const label = todo.length === 1 ? todo[0].it.title : todo.length === 0 ? GROUP_LABEL[g.group] : `${GROUP_LABEL[g.group]} · ${todo.length}`;
-    out.push({ id: g.id, kind: 'routine', group: g.group, blocks: g.blocks, mid: g.mid + 2, r: 14, color: itemHex(lead.it), doodle: lead.it.doodle, label: shortLabel(label), done: todo.length === 0 });
+    out.push({ id: g.id, kind: 'routine', group: g.group, blocks: g.blocks, mid: g.mid + 2, r: 14, color: itemHex(lead.it), doodle: lead.it.doodle, labelFull: g.blocks.map((x) => x.it.title).join(', '), label: shortLabel(label), done: todo.length === 0 });
   }
   return out.sort((a, b) => a.mid - b.mid);
 }
-const shortLabel = (s) => (s.length > 14 ? s.slice(0, 13) + '…' : s);
+const shortLabel = (s) => (s.length > 12 ? s.slice(0, 11) + '…' : s);
 
 // ---- render ---------------------------------------------------------------------
 export function mount(el) {
@@ -70,10 +71,12 @@ export function mount(el) {
   nodes = new Map();
   focusId = null;
   const hour = T.parts(T.now()).hh;
-  const greet = pick(hour >= 18 ? 'greetingEvening' : 'greeting');
+  const greet = S.profile.name && S.profile.name.trim()
+    ? `Hey ${S.profile.name.trim()}`
+    : pick(hour >= 18 ? 'greetingEvening' : 'greeting');
   el.innerHTML = `
     <header class="hdr">
-      <div><div class="m" data-date>${esc(T.longDate())}</div><h1 class="h">${esc(greet)}</h1></div>
+      <div><div class="m" data-date>${esc(T.longDate())}</div><h1 class="h" data-greeting>${esc(greet)}</h1></div>
       <a class="mark-btn" href="#/settings" aria-label="Settings">${markSVG()}</a>
     </header>
     <div class="drift-slot" data-drift-slot></div>
@@ -111,6 +114,8 @@ async function mountDesk() {
 }
 
 function unmount() {
+  clearFx(FOCUS_FX);
+  if (root) root.querySelectorAll('.stamp[data-fx-owner="focus-card"]').forEach((el) => el.remove());
   desk.forEach((d) => d && d.unmount && d.unmount());
   desk = [];
   clearInterval(tick); clearInterval(minuteTick);
@@ -120,9 +125,13 @@ function unmount() {
 
 function update(reason, detail) {
   if (!root) return;
+  if (reason === 'profile') {
+    const greeting = root.querySelector('[data-greeting]');
+    if (greeting) greeting.textContent = S.profile.name && S.profile.name.trim() ? `Hey ${S.profile.name.trim()}` : pick(T.parts(T.now()).hh >= 18 ? 'greetingEvening' : 'greeting');
+  }
   desk.forEach((d) => d && d.update && d.update(reason, detail));
   if (reason === 'drift' || reason === 'plan' || reason === 'block') renderDrift();
-  if (reason === 'plan' || reason === 'block' || reason === 'profile' || reason === 'item-added') {
+  if (reason === 'plan' || reason === 'block' || reason === 'profile' || reason === 'item-added' || reason === 'item-edited' || reason === 'items-cleared') {
     renderArc(false);
     if (!busy) renderFocus('soft');
     renderShelf();
@@ -229,26 +238,73 @@ function layoutNodes(first) {
       }
     }
   }
-  // Labels go above near the top of the arc, else below; they avoid nodes and
-  // each other, and stay quiet (still in the aria-label) when there is no room.
-  const boxes = list.map((n) => { const p = arc.point(n.mid); return [p[0] - n.r, p[1] - n.r, p[0] + n.r, p[1] + n.r]; });
-  const taken = [];
-  const hit = (r) => [...boxes, ...taken].some((q) => !(r[2] < q[0] + 1 || r[0] > q[2] - 1 || r[3] < q[1] + 1 || r[1] > q[3] - 1));
-  for (const n of list) {
-    const p = arc.point(n.mid);
-    const w = n.label.length * 5.6;
-    const rect = (side) => (side === 'above' ? [p[0] - w / 2, p[1] - n.r - 18, p[0] + w / 2, p[1] - n.r - 6] : [p[0] - w / 2, p[1] + n.r + 3, p[0] + w / 2, p[1] + n.r + 15]);
-    const order = p[1] < 80 ? ['above', 'below'] : ['below', 'above'];
-    n.side = order.find((s) => !hit(rect(s))) || order[0];
-    n.quiet = hit(rect(n.side));
-    if (!n.quiet) taken.push(rect(n.side));
+  const points = new Map(list.map((n) => [n.id, arc.point(n.mid)]));
+  const width = (n) => Math.min(112, Math.max(28, n.label.length * 5.8));
+  const importance = (n) => {
+    const distance = Math.abs(n.mid - T.minOfDay());
+    return (n.block && n.block.id === focusId ? 10000 : 0) + (n.done ? -100 : 0) + (n.kind === 'routine' ? 0 : 10) - distance / 1000;
+  };
+  const ranked = [...list].sort((a, b) => importance(b) - importance(a));
+  const visible = [];
+  for (const n of ranked) {
+    const p = points.get(n.id);
+    const crowded = visible.find((v) => {
+      const q = points.get(v.id);
+      return Math.abs(p[0] - q[0]) < Math.max(width(n), width(v)) + 6 && Math.abs(p[1] - q[1]) < 72;
+    });
+    if (crowded) {
+      crowded.hiddenLabels = [...(crowded.hiddenLabels || []), n.labelFull];
+      n.quiet = true;
+    } else {
+      visible.push(n);
+      n.quiet = false;
+      n.hiddenLabels = [];
+    }
+  }
+  const nodeBoxes = list.map((n) => {
+    const p = points.get(n.id);
+    return { id: n.id, box: [p[0] - n.r, p[1] - n.r, p[0] + n.r, p[1] + n.r] };
+  });
+  const labels = [];
+  const intersects = (a, b) => !(a[2] + 3 < b[0] || a[0] > b[2] + 3 || a[3] + 2 < b[1] || a[1] > b[3] + 2);
+  for (const n of visible) {
+    const p = points.get(n.id), w = width(n);
+    const preferred = (visible.indexOf(n) % 2) === 0 ? 'above' : 'below';
+    const sides = [preferred, preferred === 'above' ? 'below' : 'above'];
+    const shifts = [0, -18, 18, -36, 36, -52, 52];
+    n.quiet = true;
+    for (const side of sides) {
+      for (const dx of shifts) {
+        const x = Math.max(4 + w / 2, Math.min(VIEW.w - 4 - w / 2, p[0] + dx));
+        const y = side === 'above' ? p[1] - n.r - 9 : p[1] + n.r + 16;
+        const box = [x - w / 2, y - 12, x + w / 2, y + 2];
+        const hitsNode = nodeBoxes.some((v) => v.id !== n.id && intersects(box, v.box));
+        if (box[1] < 2 || box[3] > VIEW.h - 2 || hitsNode || labels.some((v) => intersects(box, v.box))) continue;
+        n.side = side;
+        n.labelX = x - p[0];
+        n.labelY = y - p[1];
+        labels.push({ id: n.id, box });
+        n.quiet = false;
+        break;
+      }
+      if (!n.quiet) break;
+    }
+  }
+  const placed = visible.filter((n) => !n.quiet);
+  for (const n of visible.filter((item) => item.quiet)) {
+    const p = points.get(n.id);
+    const closest = placed.reduce((best, item) => {
+      const q = points.get(item.id);
+      const distance = Math.hypot(p[0] - q[0], p[1] - q[1]);
+      return !best || distance < best.distance ? { item, distance } : best;
+    }, null);
+    if (closest) closest.item.hiddenLabels = [...(closest.item.hiddenLabels || []), n.labelFull];
   }
   let i = 0;
   for (const n of list) {
     seen.add(n.id);
     let rec = nodes.get(n.id);
-    const labelY = n.side === 'above' ? -n.r - 8 : n.r + 13;
-    const labelHTML = `<text class="node-label${n.quiet ? ' quiet' : ''}" y="${labelY.toFixed(1)}" text-anchor="middle">${esc(n.label)}</text>`;
+    const labelHTML = `<text class="node-label${n.quiet ? ' quiet' : ''}" x="${(n.labelX || 0).toFixed(1)}" y="${(n.labelY || (n.r + 13)).toFixed(1)}" text-anchor="middle">${esc(n.label)}</text>`;
     if (!rec) {
       const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       g.setAttribute('class', `node node-${n.kind}${n.done ? ' is-done' : ''}`);
@@ -295,8 +351,9 @@ function layoutNodes(first) {
 }
 
 function ariaFor(n) {
-  if (n.kind === 'routine') return `${GROUP_LABEL[n.group]} routines, ${n.blocks.filter((x) => x.b.status === 'done').length} of ${n.blocks.length} done`;
-  return `${n.item.title}, ${T.clock(new Date(n.block.start))} to ${T.clock(new Date(n.block.end))}${n.done ? ', done' : ''}`;
+  const nearby = n.hiddenLabels && n.hiddenLabels.length ? ` Nearby labels: ${n.hiddenLabels.join(', ')}.` : '';
+  if (n.kind === 'routine') return `${GROUP_LABEL[n.group]} routines, ${n.blocks.filter((x) => x.b.status === 'done').length} of ${n.blocks.length} done.${nearby}`;
+  return `${n.item.title}, ${T.clock(new Date(n.block.start))} to ${T.clock(new Date(n.block.end))}${n.done ? ', done' : ''}.${nearby}`;
 }
 
 function place(g, m) {
@@ -436,6 +493,7 @@ function blockDetail(n) {
       <div><div class="detail-title">${esc(it.title)}</div>
       <div class="m">${T.clock(s)} – ${T.clock(e)}${due ? ' · ' + esc(due) : ''}</div></div>
     </div>
+    ${n.hiddenLabels && n.hiddenLabels.length ? `<p class="detail-why">Also nearby: ${esc(n.hiddenLabels.join(', '))}</p>` : ''}
     <p class="detail-why" style="color:${n.color}">${esc(b.why)}</p>
     ${movable ? `<div class="detail-nudge" role="group" aria-label="Move this block"><button class="btn btn-ghost btn-sm" data-act="nudge" data-min="-15">−15 min</button><button class="btn btn-ghost btn-sm" data-act="nudge" data-min="15">+15 min</button></div>` : ''}
     <div class="detail-actions">
@@ -448,10 +506,11 @@ function routineDetail(n) {
   return `
     <div class="detail-title">${GROUP_LABEL[n.group]} routines</div>
     <ul class="detail-list">${n.blocks.map(({ b, it }) => `
-      <li><button class="detail-row ${b.status === 'done' ? 'is-done' : ''}" type="button" data-act="toggle" data-block="${b.id}" aria-pressed="${b.status === 'done'}">
+      <li class="detail-routine-row"><button class="detail-row ${b.status === 'done' ? 'is-done' : ''}" type="button" data-act="toggle" data-block="${b.id}" aria-pressed="${b.status === 'done'}">
         <span class="detail-row-tile" style="background:${itemHex(it)}">${doodleSVG(it.doodle, 22, '#111', { boil: false })}</span>
         <span>${esc(it.title)}</span><span class="m">${T.clock(new Date(b.start))}</span>
-        <span class="detail-row-check">${b.status === 'done' ? CHECK : ''}</span></button></li>`).join('')}
+        <span class="detail-row-check">${b.status === 'done' ? CHECK : ''}</span></button>
+        <button class="btn btn-ghost btn-sm" type="button" data-act="edit-routine" data-item="${esc(it.id)}">Edit</button></li>`).join('')}
     </ul>
     <div class="detail-actions"><button class="btn btn-ghost btn-sm" data-act="play" data-group="${n.group}">▶ Play</button><button class="btn btn-ghost btn-sm" data-act="routines">All routines</button></div>`;
 }
@@ -461,7 +520,20 @@ async function onDetailClick(e, rec) {
   if (!btn) return;
   const act = btn.dataset.act;
   const n = rec.n;
-  if (act === 'edit') { closeDetail(true); const { openEditor } = await import('./editor.js'); openEditor(n.item); return; }
+  if (act === 'edit') {
+    closeDetail(true);
+    const { openEditor } = await import('./editor.js');
+    openEditor(n.item, { block: n.kind === 'work' && n.block.status === 'planned' ? n.block : null });
+    return;
+  }
+  if (act === 'edit-routine') {
+    const it = itemById(btn.dataset.item);
+    if (!it) return;
+    closeDetail(true);
+    const { openEditor } = await import('./editor.js');
+    openEditor(it);
+    return;
+  }
   if (act === 'routines') { closeDetail(true); go('routines'); return; }
   if (act === 'play') { closeDetail(true); go(`guided/${btn.dataset.group}`); return; }
   if (act === 'toggle') {
@@ -496,6 +568,8 @@ function renderFocus(mode) {
   const key = cur ? cur.id : 'none';
   if (mode === 'none' && key === focusId) { updateTimer(); return; }
   if (key === focusId && mode !== 'enter') { updateTimer(); refreshActions(cur); return; }
+  clearFx(FOCUS_FX);
+  if (zone) zone.querySelectorAll('.stamp[data-fx-owner="focus-card"]').forEach((el) => el.remove());
   focusId = key;
   zone.innerHTML = `${next ? `<div class="focus-peek" aria-hidden="true" style="--c:${itemHex(itemById(next.itemId))}"></div>` : ''}
     ${cur ? focusCard(cur) : emptyCard()}
@@ -505,8 +579,8 @@ function renderFocus(mode) {
   roughBorder(card, { color, width: 2, radius: 32, seed: cur ? cur.id : 'empty', draw: mode !== 'none' });
   const peek = zone.querySelector('.focus-peek');
   if (peek) { peek.style.height = `${card.offsetHeight}px`; roughBorder(peek, { color: 'var(--line)', width: 1.5, radius: 32, seed: 'peek' }); }
-  if (mode === 'rise' && !motion.reduced) { set(card, { scale: 0.94, y: 14, opacity: 0.5 }); to(card, { scale: 1, y: 0, opacity: 1 }, 'bouncy'); }
-  else if (mode !== 'none' && !motion.reduced) { set(card, { y: 16, opacity: 0 }); to(card, { y: 0, opacity: 1 }, 'gentle'); }
+  if (mode === 'rise' && !motion.reduced && !document.hidden) { set(card, { scale: 0.94, y: 14, opacity: 0.5 }); to(card, { scale: 1, y: 0, opacity: 1 }, 'bouncy'); }
+  else if (mode !== 'none' && !motion.reduced && !document.hidden) { set(card, { y: 16, opacity: 0 }); to(card, { y: 0, opacity: 1 }, 'gentle'); }
   drawOn(card.querySelector('.focus-doodle'), { delay: 200, duration: 600 });
   observeBoil(zone);
   if (cur) wireFocus(card, cur);
@@ -530,7 +604,7 @@ function focusCard(b) {
   <article class="focus-card" data-card tabindex="0" aria-roledescription="focus card" aria-label="${esc(it.title)}. Swipe right to finish, left to snooze, up to sleep in. Arrow keys work too." style="--c:${color}">
     <button class="focus-doodle" type="button" aria-label="Poke the doodle" tabindex="-1">${doodleSVG(it.doodle, 84, color)}</button>
     <div class="eyebrow" style="color:${color}">${esc(eyebrow)}</div>
-    <div class="focus-title">${esc(it.title)}</div>
+    <button class="focus-title focus-edit" type="button" data-edit-item aria-label="Edit ${esc(it.title)}">${esc(it.title)}</button>
     <div class="m focus-meta">${esc(meta)}</div>
     <div class="focus-timer"><span class="focus-time" data-time>--:--</span><span class="m" data-time-label>${isNow ? 'left' : 'until'}</span></div>
     <svg class="focus-progress" viewBox="0 0 320 10" preserveAspectRatio="none" aria-hidden="true">
@@ -576,6 +650,7 @@ function refreshActions(cur) {
     if (b.dataset.fa === 'snooze') snooze(cur);
     if (b.dataset.fa === 'skip') sleepIn(cur);
   };
+  slot.querySelectorAll('.btn').forEach((button) => { button.style.flex = '1 1 92px'; button.style.minWidth = '0'; button.style.paddingLeft = '8px'; button.style.paddingRight = '8px'; });
 }
 
 function updateTimer() {
@@ -604,6 +679,11 @@ function wireFocus(card, b) {
   const it = itemById(b.itemId);
   doodle.addEventListener('click', (e) => { e.stopPropagation(); react(doodle.firstElementChild, it.doodle); pop(0.8); });
   squishy(doodle);
+  card.querySelector('[data-edit-item]').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const { openEditor } = await import('./editor.js');
+    openEditor(it, { block: b.kind === 'work' && b.status === 'planned' ? b : null });
+  });
   card.addEventListener('keydown', (e) => {
     if (e.target !== card) return;
     if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); finish(b, 'key'); }
@@ -613,7 +693,7 @@ function wireFocus(card, b) {
   // whole-card swipe with rotation + tilt
   const hints = { right: card.querySelector('.hint-right'), left: card.querySelector('.hint-left'), up: card.querySelector('.hint-up') };
   drag(card, {
-    ignore: '[data-knob], .focus-doodle',
+    ignore: '[data-knob], .focus-doodle, .focus-edit',
     threshold: 8,
     onMove: ({ dx, dy }) => {
       if (busy) return;
@@ -661,24 +741,36 @@ function wireEmpty(card) {
 
 async function finish(b, how, { vx = 0 } = {}) {
   if (busy) return;
+  if (b.status !== 'planned' || new Date(b.start) > T.now()) {
+    toast('That block is coming up. It is not marked done yet.');
+    return;
+  }
   busy = true;
   const card = root.querySelector('[data-card]');
+  const bootRoot = root;
   const it = itemById(b.itemId);
   try {
     if (card && !motion.reduced) {
-      const st = stamp(card, { color: '#7CBB93', label: 'Done', seed: b.id });
+      const st = stamp(card, { color: '#7CBB93', label: 'Done', seed: b.id, owner: FOCUS_FX });
       const d = card.querySelector('.focus-doodle svg');
       if (d) { set(d, { rotate: 8 }); to(d, { rotate: 0 }, { stiffness: 320, damping: 6 }); }
       const r = card.getBoundingClientRect();
-      burst(r.left + r.width / 2, r.top + r.height * 0.45, { count: 12, seed: b.id, doodles: ['sparkle', it.doodle] });
+      burst(r.left + r.width / 2, r.top + r.height * 0.45, { count: 12, seed: b.id, doodles: ['sparkle', it.doodle], owner: FOCUS_FX });
       pop(1); setTimeout(chime, 120); buzz(12);
       await wait(520);
-      await to(card, { x: card.offsetWidth * 1.3, rotate: 16, opacity: 0 }, { stiffness: 160, damping: 20, velocity: { x: Math.max(vx, 400) } });
+      if (card.isConnected && root === bootRoot) {
+        await to(card, { x: card.offsetWidth * 1.3, rotate: 16, opacity: 0 }, { stiffness: 160, damping: 20, velocity: { x: Math.max(vx, 400) } });
+      }
       st.remove();
     }
     await blockAction(b.id, 'done');
     announce(`${it.title} finished. ${pick('finished', b.id)}`);
-  } finally { busy = false; emitRise(); }
+  } finally {
+    clearFx(FOCUS_FX);
+    if (bootRoot) bootRoot.querySelectorAll('.stamp[data-fx-owner="focus-card"]').forEach((el) => el.remove());
+    busy = false;
+    if (root === bootRoot) emitRise();
+  }
 }
 
 async function snooze(b, { vx = 0 } = {}) {

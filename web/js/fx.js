@@ -6,9 +6,10 @@ import { roughCircle, rng } from './rough.js';
 
 const layer = () => document.getElementById('layer');
 
-function fxNode(html, x, y) {
+function fxNode(html, x, y, owner = '') {
   const el = document.createElement('div');
   el.className = 'fx';
+  if (owner) el.dataset.fxOwner = owner;
   el.innerHTML = html;
   el.style.left = `${x}px`;
   el.style.top = `${y}px`;
@@ -17,7 +18,7 @@ function fxNode(html, x, y) {
 }
 
 /** A burst of sparkles and tiny doodle fragments from a point. */
-export function burst(x, y, { colors = ['#FFF7E6', '#FDDEB2', '#7CBB93', '#F7C8D3'], count = 10, seed = 'b', doodles = ['sparkle'] } = {}) {
+export function burst(x, y, { colors = ['#FFF7E6', '#FDDEB2', '#7CBB93', '#F7C8D3'], count = 10, seed = 'b', doodles = ['sparkle'], owner = '' } = {}) {
   if (motion.reduced) return;
   const R = rng(seed + x + y);
   for (let i = 0; i < count; i++) {
@@ -27,7 +28,7 @@ export function burst(x, y, { colors = ['#FFF7E6', '#FDDEB2', '#7CBB93', '#F7C8D
     const html = frag
       ? `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 10 C4 6 7 4 10 2" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"/></svg>`
       : doodleSVG(doodles[i % doodles.length], size, c, { boil: false, draw: false });
-    const el = fxNode(html, x - size / 2, y - size / 2);
+    const el = fxNode(html, x - size / 2, y - size / 2, owner);
     const a = (i / count) * Math.PI * 2 + R() * 0.6;
     const dist = 50 + R() * 60;
     set(el, { scale: 0.3, opacity: 1, rotate: R() * 90 - 45 });
@@ -37,9 +38,10 @@ export function burst(x, y, { colors = ['#FFF7E6', '#FDDEB2', '#7CBB93', '#F7C8D
 }
 
 /** An ink stamp that slams onto an element: a wobbly ring with a check. */
-export function stamp(host, { color = '#7CBB93', label = 'Done', seed = 'stamp', size = 110 } = {}) {
+export function stamp(host, { color = '#7CBB93', label = 'Done', seed = 'stamp', size = 110, owner = '' } = {}) {
   const el = document.createElement('div');
   el.className = 'stamp';
+  if (owner) el.dataset.fxOwner = owner;
   el.setAttribute('aria-hidden', 'true');
   const ring = roughCircle(size / 2, size / 2, size / 2 - 6, seed, { jitter: 1.4, turns: 1.08 });
   el.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
@@ -61,8 +63,8 @@ export function checkBounce(el) {
 }
 
 /** A doodle that drifts away (moon floats up, clock spins). */
-export function floatDoodle(name, x, y, { color = '#F7C8D3', size = 72, dir = 'up' } = {}) {
-  const el = fxNode(doodleSVG(name, size, color, { boil: false }), x - size / 2, y - size / 2);
+export function floatDoodle(name, x, y, { color = '#F7C8D3', size = 72, dir = 'up', owner = '' } = {}) {
+  const el = fxNode(doodleSVG(name, size, color, { boil: false }), x - size / 2, y - size / 2, owner);
   if (motion.reduced) { tween({ from: 1, to: 0, duration: 600, onUpdate: (v) => { el.style.opacity = String(v); }, onDone: () => el.remove() }); return; }
   drawOn(el, { duration: 380, stagger: 40 });
   if (dir === 'up') {
@@ -75,6 +77,10 @@ export function floatDoodle(name, x, y, { color = '#F7C8D3', size = 72, dir = 'u
     setTimeout(() => spin(el.firstElementChild), 80);
     setTimeout(() => to(el, { opacity: 0, x: -60 }, 'gentle').then(() => el.remove()), 900);
   }
+}
+
+export function clearFx(owner) {
+  document.querySelectorAll(`[data-fx-owner="${owner}"]`).forEach((el) => el.remove());
 }
 
 /** Celebratory shower of doodles falling from the top. */

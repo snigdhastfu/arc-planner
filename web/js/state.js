@@ -13,6 +13,7 @@ export const S = {
   proposal: null, // { proposed, changes, drifted }
   drifted: false,
   persistent: true,
+  storage: { backend: 'opening', idbError: null, persist: 'not requested' },
   version: '',
 };
 
@@ -34,23 +35,22 @@ export function defaultProfile() {
 }
 
 const uid = (p = 'it') => `${p}-${(crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)).replace(/-/g, '').slice(0, 12)}`;
-const META_DEFAULTS = { onboarded: false, sound: false, logo: document.body.dataset.logo || 'B', motion: 'full', timer: null, undo: null, persistAsked: false };
+const META_DEFAULTS = { onboarded: false, sound: false, logo: document.body.dataset.logo || 'B', motion: 'full', timer: null, undo: null };
 
 // ---- boot -----------------------------------------------------------------
 /** Load local data before initializing the planner core. */
 export async function initLocal() {
   await db.open();
-  S.persistent = db.persistent();
   let values;
   try {
     values = await Promise.all([db.all('items'), db.get('profile', 'profile'), db.all('meta'), db.all('blocks')]);
   } catch (e) {
-    if (!S.persistent) throw e;
-    console.warn('IndexedDB read failed during boot; continuing in memory:', e);
-    db.fallbackToMemory();
-    S.persistent = false;
+    console.warn('IndexedDB read failed during boot; continuing with fallback storage:', e);
+    await db.fallbackToMemory(e);
     values = await Promise.all([db.all('items'), db.get('profile', 'profile'), db.all('meta'), db.all('blocks')]);
   }
+  S.persistent = db.persistent();
+  S.storage = db.storageStatus();
   const [items, prof, metas, blocks] = values;
   S.items = items;
   S.profile = prof ? prof.value : defaultProfile();
@@ -68,10 +68,10 @@ export async function initCore() {
   try {
     await replan({ quiet: true });
   } catch (e) {
-    if (!S.persistent) throw e;
-    console.warn('IndexedDB operation failed during boot; continuing in memory:', e);
-    db.fallbackToMemory();
-    S.persistent = false;
+    console.warn('Planner storage failed during boot; continuing with fallback storage:', e);
+    await db.fallbackToMemory(e);
+    S.persistent = db.persistent();
+    S.storage = db.storageStatus();
     await replan({ quiet: true });
   }
   emit('plan');
@@ -88,6 +88,13 @@ export async function setMeta(key, value) {
 // ---- planning ---------------------------------------------------------------
 function liveItems() { return S.items.filter((i) => !i.deleted); }
 function todayStart() { return T.at(T.dayKey(), 0); }
+function existingBlocksChanged(current, proposed) {
+  const next = new Map(proposed.blocks.map((block) => [block.id, block]));
+  return current.blocks.some((block) => {
+    const updated = next.get(block.id);
+    return !updated || block.start !== updated.start || block.end !== updated.end || block.status !== updated.status;
+  });
+}
 
 async function storedBlocksFromToday() {
   const all = await db.all('blocks');
@@ -126,7 +133,7 @@ export function checkDrift() {
     const res = call('replan', { items: liveItems(), profile: S.profile, now: T.iso(T.now()), current: S.plan });
     S.proposal = res;
     const was = S.drifted;
-    S.drifted = !!(res.drifted && res.changes.length);
+    S.drifted = res.changes.length > 0;
     if (was !== S.drifted) emit('drift');
   } catch (e) { console.warn('drift check failed', e); }
 }
@@ -139,24 +146,43 @@ export async function addItem(item) {
   if (!it.doodleSource) it.doodleSource = 'auto';
   S.items.push(it);
   await db.put('items', it);
-  await replan();
-  await maybePersist();
+  const proposal = previewReplan(liveItems());
+  if (existingBlocksChanged(S.plan, proposal.proposed)) {
+    S.proposal = proposal;
+    const was = S.drifted;
+    S.drifted = proposal.changes.length > 0;
+    if (was !== S.drifted) emit('drift');
+  } else {
+    S.plan = proposal.proposed;
+    await persistPlan(S.plan);
+    checkDrift();
+    emit('plan');
+  }
   emit('item-added', it);
   return it;
 }
 export async function updateItem(it) {
   await core();
+  const previous = itemById(it.id);
+  const eventTimeChanged = previous && it.type === 'event' && (previous.start !== it.start || previous.end !== it.end);
   it = { ...it, updatedAt: T.iso(T.now()) };
   if (it.doodleSource !== 'user') it.doodle = call('matchDoodle', { title: it.title, type: it.type }).doodle;
   S.items = S.items.map((x) => (x.id === it.id ? it : x));
   await db.put('items', it);
-  // Edits to effort/deadline release that item's future planned blocks so
-  // the new numbers apply; other items stay exactly where they are.
-  const all = await db.all('blocks');
-  const today = T.dayKey();
-  const drop = all.filter((b) => b.itemId === it.id && b.day >= today && b.status === 'planned' && !b.pinned && new Date(b.start) > T.now()).map((b) => b.id);
-  if (drop.length) await db.delMany('blocks', drop);
-  await replan();
+  if (eventTimeChanged) {
+    const proposal = previewReplan(liveItems());
+    S.plan = {
+      ...S.plan,
+      blocks: [
+        ...S.plan.blocks.filter((block) => !(block.kind === 'event' && block.itemId === it.id)),
+        ...proposal.proposed.blocks.filter((block) => block.kind === 'event' && block.itemId === it.id),
+      ],
+    };
+    await persistPlan(S.plan);
+    emit('plan');
+  }
+  checkDrift();
+  emit('item-edited', it);
   return it;
 }
 export async function deleteItem(id) {
@@ -181,12 +207,8 @@ export async function reorderRoutines(ids) {
     const it = itemById(ids[i]);
     if (it && it.routine && it.routine.order !== i) await updateItemRaw({ ...it, routine: { ...it.routine, order: i } });
   }
-  // Routine positions are derived from Order, so their planned blocks are rebuilt.
-  const all = await db.all('blocks');
-  const today = T.dayKey();
-  const drop = all.filter((b) => b.kind === 'routine' && b.status === 'planned' && b.day >= today).map((b) => b.id);
-  if (drop.length) await db.delMany('blocks', drop);
-  await replan();
+  checkDrift();
+  emit('item-edited');
 }
 
 // ---- block actions ---------------------------------------------------------------
@@ -229,6 +251,26 @@ export async function moveBlock(blockId, startDate) {
   S.plan = { ...S.plan, blocks: S.plan.blocks.map((x) => (x.id === blockId ? nb : x)) };
   await persistPlan(S.plan);
   await replan();
+}
+
+export async function editBlock(blockId, startDate, durationMin) {
+  const block = S.plan.blocks.find((item) => item.id === blockId);
+  if (!block) throw new Error('That block is no longer on the plan.');
+  if (!Number.isFinite(durationMin) || durationMin < 1 || durationMin > 1440) throw new Error('Choose a block length from 1 to 1440 minutes.');
+  const start = new Date(startDate);
+  const end = new Date(start.getTime() + durationMin * 60000);
+  if (Number.isNaN(start.getTime())) throw new Error('Choose a valid block start time.');
+  const startMin = T.minOfDay(start), endMin = T.minOfDay(end);
+  if (startMin < S.profile.wakeMin || endMin > S.profile.sleepMin || T.dayKey(end) !== T.dayKey(start)) {
+    throw new Error('Keep this block inside your waking hours on one day.');
+  }
+  if (clashAt(blockId, start, end)) throw new Error('That time overlaps another planned block.');
+  const updated = { ...block, start: T.iso(start), end: T.iso(end), pinned: true, why: 'You chose this time yourself.' };
+  S.plan = { ...S.plan, blocks: S.plan.blocks.map((item) => item.id === blockId ? updated : item) };
+  await persistPlan(S.plan);
+  await replan();
+  emit('block', { blockId, action: 'edit', block: updated });
+  return updated;
 }
 
 /** Would a block at [start,end) overlap anything active? Returns the clashing block. */
@@ -289,14 +331,8 @@ export async function setProfile(p, { rebuild = true } = {}) {
   S.profile = { ...p };
   T.setTZ(S.profile.tz);
   await db.put('profile', { key: 'profile', value: S.profile });
-  if (rebuild) {
-    // Profile changes re-place future planned blocks (the user asked for it).
-    const all = await db.all('blocks');
-    const today = T.dayKey();
-    const drop = all.filter((b) => b.day >= today && b.status === 'planned' && !b.pinned && new Date(b.start) > T.now()).map((b) => b.id);
-    if (drop.length) await db.delMany('blocks', drop);
-  }
-  await replan();
+  if (rebuild && S.plan.blocks.length) checkDrift();
+  else await replan();
   emit('profile');
 }
 
@@ -326,14 +362,16 @@ export async function loadSample() {
   const items = sample.items.map((s) => {
     const it = { ...s };
     for (const k of ['start', 'end', 'due', 'startBy']) if (s[k]) it[k] = when(s[k]);
+    it.sample = true;
     it.updatedAt = T.iso(T.now());
     return it;
   });
   await db.clear('items'); await db.clear('blocks'); await db.clear('routineLog'); await db.clear('history');
   S.items = items;
   await db.putMany('items', items);
+  await setMeta('sampleData', true);
   if (!S.profile) S.profile = defaultProfile();
-  await setProfile({ ...defaultProfile(), tz: S.profile.tz }, { rebuild: false });
+  await setProfile(S.profile, { rebuild: false });
   // A lived-in feel: yesterday's routines all done, and today's first two.
   const yesterday = T.addDays(today, -1);
   await db.putMany('routineLog', items.filter((i) => i.type === 'routine').map((i) => ({ day: yesterday, itemId: i.id, status: 'done', at: T.iso(T.now()) })));
@@ -345,11 +383,34 @@ export async function loadSample() {
   await setMeta('onboarded', true);
   emit('plan');
 }
+export async function clearSampleData() {
+  const isSample = (item) => item.sample || item.id.startsWith('s-');
+  const ids = new Set(S.items.filter(isSample).map((item) => item.id));
+  if (!ids.size) {
+    await setMeta('sampleData', false);
+    return 0;
+  }
+  for (const id of ids) await db.del('items', id);
+  const blocks = await db.all('blocks');
+  const logs = await db.all('routineLog');
+  for (const block of blocks) if (ids.has(block.itemId)) await db.del('blocks', block.id);
+  for (const log of logs) if (ids.has(log.itemId)) await db.del('routineLog', [log.day, log.itemId]);
+  S.items = S.items.filter((item) => !ids.has(item.id));
+  S.plan.blocks = S.plan.blocks.filter((block) => !ids.has(block.itemId));
+  await setMeta('sampleData', false);
+  await replan();
+  emit('items-cleared');
+  return ids.size;
+}
 export async function eraseEverything() {
   await db.eraseAll();
-  S.items = []; S.profile = defaultProfile(); S.meta = { ...META_DEFAULTS };
+  S.items = []; S.profile = defaultProfile(); S.meta = { ...META_DEFAULTS, onboarded: true };
   S.plan = { blocks: [], atRisk: [], warnings: [], generatedAt: '' };
   S.proposal = null; S.drifted = false;
+  S.persistent = db.persistent();
+  S.storage = db.storageStatus();
+  await db.put('profile', { key: 'profile', value: S.profile });
+  await db.put('meta', { key: 'onboarded', value: true });
   emit('erased');
 }
 export async function exportBackup() {
@@ -390,10 +451,6 @@ export async function importEvents(items) {
   await db.putMany('items', fresh);
   await replan();
   return fresh.length;
-}
-
-async function maybePersist() {
-  if (!S.meta.persistAsked) { await setMeta('persistAsked', true); db.requestPersist(); }
 }
 
 // ---- timer (survives reloads via timestamps) --------------------------------------------
