@@ -101,8 +101,8 @@ function renderEnergy() {
   const hours = [];
   for (let m = Math.floor(p.wakeMin / 60) * 60; m < p.sleepMin; m += 60) hours.push(m);
   const lvl = (m) => { const w = p.energy.find((e) => m + 30 >= e.startMin && m + 30 < e.endMin); return w ? w.level : 'med'; };
-  bar.innerHTML = hours.map((m) => `<button type="button" class="lvl-${lvl(m)}" data-hour="${m}" aria-label="${T.clockMin(m)}: ${LV_LABEL[lvl(m)]} energy">${(m / 60) % 3 === 0 ? T.clockMin(m).replace(' ', '') : ''}</button>`).join('');
-  root.querySelector('[data-energy-legend]').innerHTML = '<span style="color:var(--teal)">■</span> peak &nbsp; <span style="color:var(--navajo)">■</span> okay &nbsp; <span style="color:#6d7f92">■</span> low';
+  bar.innerHTML = hours.map((m) => `<button type="button" class="lvl-${lvl(m)}" data-hour="${m}" aria-label="${T.clockMin(m)}: ${LV_LABEL[lvl(m)]} energy">${T.clockMin(m).replace(' ', '')}</button>`).join('');
+  root.querySelector('[data-energy-legend]').innerHTML = '<span style="color:var(--teal)">■</span> peak &nbsp; <span style="color:var(--navajo)">■</span> okay &nbsp; <span style="color:var(--lagoon);-webkit-text-stroke:1px var(--mist)">■</span> low';
 }
 
 async function renderCards() {

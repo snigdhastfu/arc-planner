@@ -6,15 +6,31 @@
 package main
 
 import (
+	"compress/gzip"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"mime"
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 )
+
+// gzipWriter compresses responses like GitHub Pages does, so local timings are honest.
+type gzipWriter struct {
+	http.ResponseWriter
+	w io.Writer
+}
+
+func (g gzipWriter) Write(b []byte) (int, error) { return g.w.Write(b) }
+
+func (g gzipWriter) WriteHeader(code int) {
+	g.ResponseWriter.Header().Del("Content-Length") // length is of the uncompressed file
+	g.ResponseWriter.WriteHeader(code)
+}
 
 func main() {
 	port := flag.Int("port", 8080, "port to listen on")
@@ -53,7 +69,15 @@ func main() {
 	})
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		files.ServeHTTP(w, r)
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") || strings.HasSuffix(r.URL.Path, ".png") || strings.HasSuffix(r.URL.Path, ".woff2") {
+			files.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Add("Vary", "Accept-Encoding")
+		gz := gzip.NewWriter(w)
+		defer gz.Close()
+		files.ServeHTTP(gzipWriter{ResponseWriter: w, w: gz}, r)
 	})
 	addr := fmt.Sprintf("%s:%d", *host, *port)
 	log.Printf("Arc dev server on http://%s/  (rebuild: /__rebuild)", addr)

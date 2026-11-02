@@ -28,7 +28,7 @@ page.on('console', (m) => { if (m.type() === 'error') problems.push(`console err
 page.on('pageerror', (e) => problems.push(`page error: ${e.message}`));
 
 const url = (hash = 'today') => `${base}?now=${encodeURIComponent(NOW)}#/${hash}`;
-const booted = () => page.waitForFunction(() => globalThis.__arcBoot, null, { timeout: 20000 });
+const booted = () => page.waitForFunction(() => globalThis.__arcCore, null, { timeout: 20000 });
 const S = (fn) => page.evaluate(fn);
 const wait = (ms) => page.waitForTimeout(ms);
 const go = async (hash) => { await page.evaluate((h) => { location.hash = `#/${h}`; }, hash); await wait(700); };
@@ -36,7 +36,8 @@ const go = async (hash) => { await page.evaluate((h) => { location.hash = `#/${h
 // ---------------- M2 ----------------
 await page.goto(url());
 await booted();
-const boot = await S(() => globalThis.__arcBoot);
+await page.waitForFunction(() => globalThis.__arcBoot);
+const boot = await S(() => globalThis.__arcCore);
 const version = await S(() => globalThis.__arc.call('version').version);
 ok('wasm core boots and arc.version() answers', version === '1.0.0', `v${version}, boot ${boot.ms} ms`);
 
@@ -209,18 +210,18 @@ const off = `http://127.0.0.1:${srv.address().port}/`;
 const page2 = await ctx.newPage();
 page2.on('console', (m) => { if (m.type() === 'error' && up) problems.push(`console error: ${m.text()}`); });
 await page2.goto(`${off}#/today`);
-await page2.waitForFunction(() => globalThis.__arcBoot, null, { timeout: 20000 });
+await page2.waitForFunction(() => globalThis.__arcCore, null, { timeout: 20000 });
 await page2.evaluate(() => navigator.serviceWorker.ready);
 await page2.click('text=Skip for now');
 await page2.waitForTimeout(400);
 await page2.reload();
-await page2.waitForFunction(() => globalThis.__arcBoot);
+await page2.waitForFunction(() => globalThis.__arcCore);
 const controlled = await page2.evaluate(() => !!navigator.serviceWorker.controller);
 up = false; // server gone: the network is unreachable
 await page2.reload();
 let offlineOK = false;
 try {
-  await page2.waitForFunction(() => globalThis.__arcBoot, null, { timeout: 10000 });
+  await page2.waitForFunction(() => globalThis.__arcCore, null, { timeout: 10000 });
   offlineOK = await page2.evaluate(() => !!document.querySelector('.nav-plus') && globalThis.__arc.call('version').version === '1.0.0');
 } catch (_) { offlineOK = false; }
 ok('app shell loads and runs offline (server stopped)', controlled && offlineOK);
@@ -230,14 +231,14 @@ const swPath = join(dist, 'sw.js');
 const swOrig = readFileSync(swPath, 'utf8');
 appendFileSync(swPath, `\n// e2e update ${Date.now()}\n`);
 await page2.reload();
-await page2.waitForFunction(() => globalThis.__arcBoot);
+await page2.waitForFunction(() => globalThis.__arcCore);
 await page2.evaluate(async () => { const r = await navigator.serviceWorker.getRegistration(); await r.update(); });
 let banner = false;
 try { await page2.waitForSelector('[data-update]', { timeout: 8000 }); banner = true; } catch (_) { /* no banner */ }
 ok('"A new version is ready, tap to refresh" banner appears (no auto skipWaiting)', banner);
 if (banner) {
   await Promise.all([page2.waitForEvent('load', { timeout: 10000 }), page2.click('[data-update]')]);
-  await page2.waitForFunction(() => globalThis.__arcBoot);
+  await page2.waitForFunction(() => globalThis.__arcCore);
   const fresh = await page2.evaluate(async () => (await caches.keys()).length);
   ok('tapping it activates the new worker, reloads, and old caches are deleted', fresh === 1, `${fresh} cache(s)`);
 }

@@ -13,7 +13,7 @@ const errors = [];
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errors.push(`${m.type()}: ${m.text()}`); });
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 await page.goto(`${url}?now=${encodeURIComponent(NOW)}#/today`);
-await page.waitForFunction(() => globalThis.__arcBoot, null, { timeout: 20000 });
+await page.waitForFunction(() => globalThis.__arcCore, null, { timeout: 20000 });
 console.log('boot', await page.evaluate(() => globalThis.__arcBoot));
 await page.evaluate(async () => { const m = await import('./js/state.js'); await m.loadSample(); });
 await page.waitForTimeout(400);

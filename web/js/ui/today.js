@@ -206,7 +206,7 @@ function nodeInner(n) {
     shape = `<circle r="${r.toFixed(1)}" fill="#000" stroke="${n.color}" stroke-width="2" class="node-shape"/>` +
       doodleInSVG(n.doodle, -ds / 2, -ds / 2, ds, n.color, { draw: true });
   }
-  const hit = `<circle r="${Math.max(r, 22)}" class="node-hit"/>`;
+  const hit = `<circle r="${Math.max(r, 23)}" class="node-hit"/>`;
   const conflict = `<circle r="${(r + 5).toFixed(1)}" class="node-conflict"/><circle r="${(r + 5).toFixed(1)}" class="node-lift"/>`;
   const badge = n.done ? `<g class="node-done" transform="translate(${(r * 0.72).toFixed(1)} ${(-r * 0.72).toFixed(1)})"><circle r="7" fill="var(--teal)"/><path d="M-3 0 l2 2 4 -4" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>` : '';
   return `${conflict}${shape}${badge}${hit}`;

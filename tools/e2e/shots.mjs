@@ -6,7 +6,7 @@ import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
 
 const base = process.argv[2] || 'http://localhost:8090/';
-const OUT = new URL('./shots/', import.meta.url).pathname;
+const OUT = new URL(process.env.REDUCED ? './shots/reduced/' : './shots/', import.meta.url).pathname;
 mkdirSync(OUT, { recursive: true });
 const MORNING = '2026-11-03T08:00:00+05:30';
 const AFTERNOON = '2026-11-03T15:21:40+05:30';
@@ -16,7 +16,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME || '/
 const problems = [];
 
 async function scene(viewport, tag) {
-  const ctx = await browser.newContext({ viewport, deviceScaleFactor: viewport.width < 500 ? 2 : 1, timezoneId: 'Asia/Kolkata', reducedMotion: 'no-preference' });
+  const ctx = await browser.newContext({ viewport, deviceScaleFactor: viewport.width < 500 ? 2 : 1, timezoneId: 'Asia/Kolkata', reducedMotion: process.env.REDUCED ? 'reduce' : 'no-preference' });
   const page = await ctx.newPage();
   const origin = new URL(base).origin;
   page.on('request', (r) => { if (!r.url().startsWith(origin) && !r.url().startsWith('data:') && !r.url().startsWith('blob:')) problems.push(`[${tag}] other-origin request: ${r.url()}`); });
@@ -24,7 +24,7 @@ async function scene(viewport, tag) {
   page.on('pageerror', (e) => problems.push(`[${tag}] page error: ${e.message}`));
   const open = async (now, hash) => {
     await page.goto(`${base}?now=${encodeURIComponent(now)}#/${hash}`);
-    await page.waitForFunction(() => globalThis.__arcBoot, null, { timeout: 20000 });
+    await page.waitForFunction(() => globalThis.__arcCore, null, { timeout: 20000 });
     await page.waitForTimeout(150);
   };
   // first run: onboarding

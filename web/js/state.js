@@ -2,7 +2,7 @@
 // for a plan and notifies subscribers. The planner never silently moves
 // things: plan() keeps existing blocks; changes go through replan + review.
 import * as db from './store.js';
-import { call } from './bridge.js';
+import { call, loadCore } from './bridge.js';
 import * as T from './time.js';
 
 export const S = {
@@ -37,18 +37,29 @@ const uid = (p = 'it') => `${p}-${(crypto.randomUUID ? crypto.randomUUID() : Str
 const META_DEFAULTS = { onboarded: false, sound: false, logo: document.body.dataset.logo || 'B', motion: 'full', timer: null, undo: null, persistAsked: false };
 
 // ---- boot -----------------------------------------------------------------
-export async function init() {
+/** Local half of boot: IndexedDB only, so the shell renders before the core. */
+export async function initLocal() {
   await db.open();
   S.persistent = db.persistent();
-  const [items, prof, metas] = await Promise.all([db.all('items'), db.get('profile', 'profile'), db.all('meta')]);
+  const [items, prof, metas, blocks] = await Promise.all([db.all('items'), db.get('profile', 'profile'), db.all('meta'), db.all('blocks')]);
   S.items = items;
   S.profile = prof ? prof.value : defaultProfile();
   T.setTZ(S.profile.tz);
   S.meta = { ...META_DEFAULTS };
   metas.forEach((m) => { S.meta[m.key] = m.value; });
+  const today = T.dayKey();
+  const saved = S.meta.plan || {};
+  S.plan = { blocks: blocks.filter((b) => b.day >= today).map(stripDay).sort((a, b) => a.start.localeCompare(b.start) || a.id.localeCompare(b.id)), atRisk: saved.atRisk || [], warnings: saved.warnings || [], generatedAt: saved.generatedAt || '' };
+}
+/** Core half: once the wasm is ready, refresh the plan from the Go planner. */
+export async function initCore() {
+  await loadCore();
   try { S.version = call('version').version; } catch (_) { S.version = '?'; }
   await replan({ quiet: true });
+  emit('plan');
 }
+export async function init() { await initLocal(); await initCore(); }
+const core = () => loadCore();
 
 export async function setMeta(key, value) {
   S.meta[key] = value;
@@ -80,6 +91,7 @@ async function persistPlan(plan) {
 
 /** Recompute the plan keeping existing blocks (new effort only). */
 export async function replan({ quiet = false } = {}) {
+  await core();
   const existing = await storedBlocksFromToday();
   const plan = call('plan', { items: liveItems(), profile: S.profile, now: T.iso(T.now()), existing });
   S.plan = plan;
@@ -91,6 +103,7 @@ export async function replan({ quiet = false } = {}) {
 
 /** Ask the core whether the day drifted and what it would propose. */
 export function checkDrift() {
+  if (!globalThis.arcReady) return;
   try {
     const res = call('replan', { items: liveItems(), profile: S.profile, now: T.iso(T.now()), current: S.plan });
     S.proposal = res;
@@ -102,6 +115,7 @@ export function checkDrift() {
 
 // ---- items -----------------------------------------------------------------------
 export async function addItem(item) {
+  await core();
   const it = { ...item, id: item.id && !item.id.startsWith('qa-') ? item.id : uid(), updatedAt: T.iso(T.now()) };
   if (!it.doodle) it.doodle = call('matchDoodle', { title: it.title, type: it.type }).doodle;
   if (!it.doodleSource) it.doodleSource = 'auto';
@@ -113,6 +127,7 @@ export async function addItem(item) {
   return it;
 }
 export async function updateItem(it) {
+  await core();
   it = { ...it, updatedAt: T.iso(T.now()) };
   if (it.doodleSource !== 'user') it.doodle = call('matchDoodle', { title: it.title, type: it.type }).doodle;
   S.items = S.items.map((x) => (x.id === it.id ? it : x));
@@ -159,6 +174,7 @@ export async function reorderRoutines(ids) {
 // ---- block actions ---------------------------------------------------------------
 const inflight = new Set(); // guards double-fired swipes
 export async function blockAction(blockId, action, extra = {}) {
+  await core();
   if (inflight.has(blockId)) return null;
   inflight.add(blockId);
   try {
@@ -215,6 +231,7 @@ export function previewReplan(items) {
   return call('replan', { items, profile: S.profile, now: T.iso(T.now()), current: S.plan });
 }
 export async function applyProposal(acceptedIDs, proposal = S.proposal) {
+  await core();
   const p = proposal;
   if (!p) return { conflicts: [] };
   const res = call('applyChanges', { current: S.plan, proposed: p.proposed, changes: p.changes, acceptedIDs, items: liveItems(), profile: S.profile, now: T.iso(T.now()) });
@@ -284,6 +301,7 @@ export const postcards = () => db.all('postcards');
 
 // ---- sample data / erase / backup ------------------------------------------------------
 export async function loadSample() {
+  await core();
   const sample = await fetch('data/sample.json').then((r) => r.json());
   const today = T.dayKey();
   const when = (spec) => (spec ? T.iso(T.at(T.addDays(today, spec.day), spec.min)) : '');

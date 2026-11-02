@@ -2,7 +2,7 @@
 import { loadCore, call } from './bridge.js';
 import { loadDoodles } from './doodle.js';
 import { loadMarks } from './mark.js';
-import { S, init, subscribe, setMeta } from './state.js';
+import { S, initLocal, initCore, subscribe } from './state.js';
 import { route, start, onRoute, go } from './router.js';
 import { motion, viewTransition, set, to, forgetBoil } from './anim.js';
 import { renderNav, setActive } from './ui/nav.js';
@@ -92,14 +92,18 @@ async function show(r, prev) {
 async function boot() {
   registerSW();
   const t0 = performance.now();
+  const coreP = loadCore(); // compiles in the background; never blocks the shell
   try {
-    await Promise.all([loadCore(), loadDoodles(), loadMarks(document.body.dataset.logo)]);
-    await init();
+    await Promise.all([loadDoodles(), loadMarks(document.body.dataset.logo), initLocal()]);
   } catch (e) {
     console.error(e);
     document.querySelector('.boot-line').textContent = 'Something got tangled while loading. Try reloading.';
     return;
   }
+  coreP.then(initCore).then(() => { globalThis.__arcCore = { ms: Math.round(performance.now() - t0) }; }).catch((e) => {
+    console.error(e);
+    toastLater('The planner could not start. Try reloading.');
+  });
   motion.set(S.meta.motion || 'full');
   document.body.classList.toggle('gentle', S.meta.motion === 'gentle');
   setSound(!!S.meta.sound);
@@ -128,15 +132,19 @@ async function boot() {
     setTimeout(() => bootEl.remove(), 400);
     storageBanner();
     afterStart();
+    globalThis.__arcBoot = { ms: Math.round(performance.now() - t0) };
   }, minShow);
-  globalThis.__arcBoot = { ms: Math.round(performance.now() - t0), version: S.version };
+
 }
+
+function toastLater(msg) { import('./dom.js').then((d) => d.toast(msg, { ms: 8000 })); }
 
 async function afterStart() {
   // ?add=<text> deep link: open quick add pre-filled (never auto-save)
   const params = new URLSearchParams(location.search);
   const add = params.get('add');
   if (add) {
+    await loadCore();
     params.delete('add');
     const qs = params.toString();
     history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash);

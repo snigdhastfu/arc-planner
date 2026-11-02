@@ -89,6 +89,7 @@
 .group-head { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
 .group-name { font-size: 15px; font-weight: 600; }
 .play { min-height: 36px; padding: 0 16px; font-size: 13px; border-radius: 22px; }
+.play::after { content: ""; position: absolute; inset: -4px 0; } /* 44px hit area, 36px look (mockup) */
 .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 4px; }
 .tile {
   position: relative; aspect-ratio: 1; border: 0; border-radius: 28px; color: var(--ink);
@@ -154,8 +155,8 @@
 .card { position: relative; border-radius: 28px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
 .card > :not(svg.rough) { position: relative; z-index: 1; }
 .card-title { font-weight: 600; font-size: 16px; display: flex; align-items: center; gap: 10px; }
-.energy-bar { display: flex; height: 44px; border-radius: 14px; overflow: hidden; gap: 2px; }
-.energy-bar button { border: 0; flex: 1; min-width: 0; font-size: 10px; color: var(--ink); padding: 0; }
+.energy-bar { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); border-radius: 14px; overflow: hidden; gap: 2px; }
+.energy-bar button { border: 0; height: 44px; min-width: 0; font-size: 11px; color: var(--ink); padding: 0; }
 .lvl-high { background: var(--teal); }
 .lvl-med { background: var(--navajo); }
 .lvl-low { background: var(--lagoon); color: var(--text) !important; }
@@ -202,6 +203,8 @@
   .desk-panel .tile svg.doodle { width: 38px; height: 38px; }
   .desk-panel h2 { margin: 0 0 6px; font-size: 20px; }
   .screen-routines .tiles { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .horizon-chart { max-width: 540px; margin-left: auto; margin-right: auto; }
+  .desk-panel .horizon-chart { max-width: 100%; }
   .screen-routines, .screen-horizon, .screen-settings, .screen-review, .screen-guided { max-width: 720px; width: 100%; margin: 0 auto; }
   .settings-list { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
   .sheet { border-radius: 32px; margin-bottom: 40px; max-width: 480px; }

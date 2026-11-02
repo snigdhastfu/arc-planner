@@ -89,12 +89,13 @@ svg.doodle { display: block; flex: none; }
 .row { display: flex; gap: 10px; align-items: center; }
 .row > * { flex: 1; }
 .seg { display: flex; gap: 6px; flex-wrap: wrap; }
-.seg button { min-height: 40px; padding: 0 14px; border-radius: 20px; border: 1.5px solid var(--line-2); background: none; color: var(--muted); font-size: 14px; }
+.seg button { min-height: 44px; padding: 0 14px; border-radius: 20px; border: 1.5px solid var(--line-2); background: none; color: var(--muted); font-size: 14px; }
 .seg button[aria-pressed="true"] { border-color: var(--vanilla); color: var(--ink); background: var(--vanilla); font-weight: 600; }
 .stepper { display: flex; align-items: center; gap: 8px; }
 .stepper button { width: 44px; height: 44px; border-radius: 22px; border: 1.5px solid var(--line-2); background: none; font-size: 20px; color: var(--text); flex: none; }
 .stepper output { min-width: 72px; text-align: center; font-size: 18px; font-weight: 600; }
 .switch { display: flex; align-items: center; justify-content: space-between; min-height: 48px; gap: 12px; }
+.switch button::before { content: ""; position: absolute; inset: -6px -4px; }
 .switch button { width: 56px; height: 32px; border-radius: 16px; border: 0; background: var(--line); position: relative; flex: none; }
 .switch button::after { content: ""; position: absolute; top: 4px; left: 4px; width: 24px; height: 24px; border-radius: 12px; background: var(--muted); transition: transform .25s cubic-bezier(.3,1.4,.5,1), background .2s; }
 .switch button[aria-checked="true"] { background: var(--teal); }
@@ -103,6 +104,8 @@ svg.doodle { display: block; flex: none; }
 /* ---- chips (quick add) ---- */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; min-height: 36px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 18px; border: 1.5px solid var(--line-2); background: none; color: var(--text); font-size: 13px; }
+.chip { position: relative; }
+.chip::after { content: ""; position: absolute; inset: -4px 0; }
 .chip b { color: var(--muted); font-weight: 500; }
 
 /* ---- fx ---- */
