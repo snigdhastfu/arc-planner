@@ -118,8 +118,8 @@ func (p Profile) Defaults() Profile {
 	if p.WakeMin == 0 && p.SleepMin == 0 {
 		p.WakeMin, p.SleepMin = 420, 1380
 	}
-	if p.SleepMin <= p.WakeMin {
-		p.SleepMin = p.WakeMin + 60
+	if p.SleepMin == p.WakeMin {
+		p.SleepMin = (p.WakeMin + 60) % (24 * 60)
 	}
 	if p.AmbitionMin == 0 {
 		p.AmbitionMin = 240
@@ -139,9 +139,11 @@ func (p Profile) Defaults() Profile {
 
 // LevelAt returns the energy level at minute m (gaps are "med").
 func (p Profile) LevelAt(m int) string {
-	for _, w := range p.Energy {
-		if m >= w.StartMin && m < w.EndMin {
-			return w.Level
+	for _, candidate := range []int{m, m - 24*60, m + 24*60} {
+		for _, w := range p.Energy {
+			if candidate >= w.StartMin && candidate < w.EndMin {
+				return w.Level
+			}
 		}
 	}
 	return EnergyMed

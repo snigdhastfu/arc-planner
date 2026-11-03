@@ -1,5 +1,5 @@
 // Routines: week strip, Morning/Daytime/Evening groups of pastel tiles.
-import { S, blockAction, itemById, reorderRoutines, routineWeek } from '../state.js';
+import { S, blockAction, itemById, reorderRoutines, routineWeek, markRoutineToday } from '../state.js';
 import * as T from '../time.js';
 import { doodleSVG } from '../doodle.js';
 import { set, to, drawOn, observeBoil, forgetBoil, motion, flip, tween } from '../anim.js';
@@ -20,11 +20,19 @@ export function routineItems() {
   return S.items.filter((i) => i.type === 'routine' && !i.deleted && i.routine);
 }
 export function todaysBlockFor(itemId) {
-  const k = T.dayKey();
-  return S.plan.blocks.find((b) => b.itemId === itemId && b.kind === 'routine' && T.dayKey(new Date(b.start)) === k);
+  const k = T.scheduleDayKey(T.now(), S.profile.wakeMin);
+  return S.plan.blocks.find((b) => b.itemId === itemId && b.kind === 'routine' && T.scheduleDayKey(new Date(b.start), S.profile.wakeMin) === k);
 }
 export function groupItems(g) {
   return routineItems().filter((i) => groupOf(i) === g).sort((a, b) => (a.routine.order - b.routine.order) || a.id.localeCompare(b.id));
+}
+
+function offTodayHTML(items) {
+  return `<section class="off-routines" aria-label="Routines not scheduled today">
+    <h2 class="group-name">Not scheduled today</h2>
+    <p class="m">These follow their usual days. Tap one to do it today anyway.</p>
+    <div class="tiles">${items.map((it) => tileHTML(it, groupHex(groupOf(it)))).join('')}</div>
+  </section>`;
 }
 
 export function mount(el, _params, { compact = false } = {}) {
@@ -37,9 +45,14 @@ function counts() {
   let done = 0, total = 0;
   for (const it of routineItems()) {
     const b = todaysBlockFor(it.id);
-    if (!b) continue;
-    total++;
-    if (b.status === 'done') done++;
+    const logged = S.routineLog.some((entry) => entry.day === T.scheduleDayKey(T.now(), S.profile.wakeMin) && entry.itemId === it.id && entry.status === 'done');
+    if (b) {
+      total++;
+      if (b.status === 'done' || logged) done++;
+    } else if (logged) {
+      total++;
+      done++;
+    }
   }
   return { done, total };
 }
@@ -47,14 +60,16 @@ function counts() {
 function render(first, compact) {
   if (!root) return;
   const { done, total } = counts();
-  const wd = T.weekdayName(T.parts(T.now()).wd);
+  const wd = T.weekdayName(T.weekdayOf(T.scheduleDayKey(T.now(), S.profile.wakeMin)));
   const items = routineItems();
+  const offToday = items.filter((it) => !todaysBlockFor(it.id));
   const prevTiles = new Map();
   root.querySelectorAll('[data-tile]').forEach((t) => prevTiles.set(t.dataset.tile, t.querySelector('.tile-check') ? 'done' : ''));
   const html = `
-    ${compact ? '' : `<header class="hdr"><div><div class="m">${esc(wd)} · ${done} of ${total} done</div><h1 class="h">Routines</h1></div><a class="mark-btn" href="#/settings" aria-label="Settings">${markSVG()}</a></header>`}
+    ${compact ? '' : `<header class="hdr"><div><div class="m">${total ? `${esc(wd)} · ${done} of ${total} done` : 'A roomy day · nothing due'}</div><h1 class="h">Routines</h1></div><a class="mark-btn" href="#/settings" aria-label="Settings">${markSVG()}</a></header>`}
     <div class="week" data-week aria-label="This week's routines">${weekHTML()}</div>
     ${items.length ? GROUPS.map(([g, label]) => groupHTML(g, label)).join('') : emptyHTML()}
+    ${offToday.length ? offTodayHTML(offToday) : ''}
     <div data-shelf></div>`;
   if (first) root.innerHTML = html;
   else {
@@ -76,7 +91,7 @@ function render(first, compact) {
 }
 
 function weekHTML() {
-  const today = T.dayKey();
+  const today = T.scheduleDayKey(T.now(), S.profile.wakeMin);
   const wd = T.weekdayOf(today);
   const monday = T.addDays(today, -((wd + 6) % 7));
   const keys = Array.from({ length: 7 }, (_, i) => T.addDays(monday, i));
@@ -95,7 +110,7 @@ async function fillWeek(animate) {
   const days = [...root.querySelectorAll('[data-day]')];
   const keys = days.map((d) => d.dataset.day);
   const fr = await routineWeek(keys);
-  const today = T.dayKey();
+  const today = T.scheduleDayKey(T.now(), S.profile.wakeMin);
   days.forEach((d, i) => {
     const f = keys[i] > today ? 0 : fr[i];
     const rect = d.querySelector('.week-fill');
@@ -118,7 +133,7 @@ async function fillWeek(animate) {
 }
 
 function groupHTML(g, label) {
-  const its = groupItems(g);
+  const its = groupItems(g).filter((it) => todaysBlockFor(it.id));
   if (!its.length) return '';
   const color = groupHex(g);
   return `<section class="group" data-group="${g}" aria-label="${label} routines">
@@ -186,7 +201,7 @@ function wireTiles(first, prevTiles) {
     });
     tile.addEventListener('click', () => { if (!tile._dragged) openQuick(it, tile); });
     tile.addEventListener('touchmove', (e) => { if (tile.classList.contains('dragging')) e.preventDefault(); }, { passive: false });
-    wireReorder(tile, it);
+    if (!tile.closest('.off-routines')) wireReorder(tile, it);
   });
 }
 
@@ -195,7 +210,7 @@ function celebrate(tile, it) {
   const d = tile.querySelector('svg.doodle');
   if (d) react(d, it.doodle);
   const r = tile.getBoundingClientRect();
-  burst(r.left + r.width / 2, r.top + r.height / 2, { count: 8, seed: it.id, colors: ['#111111', groupHex(groupOf(it)), '#7CBB93'] });
+  burst(r.left + r.width / 2, r.top + r.height / 2, { count: 8, seed: it.id, colors: ['#111111', groupHex(groupOf(it)), '#7CBB93'], finishEffect: true });
 }
 
 // long-press then drag to reorder within the group; neighbours spring aside
@@ -255,6 +270,8 @@ function wireReorder(tile, it) {
 /** Quick sheet for a routine: done / sleep in / edit / move. */
 export function openQuick(it, from) {
   const b = todaysBlockFor(it.id);
+  const day = T.scheduleDayKey(T.now(), S.profile.wakeMin);
+  const extraDone = !b && S.routineLog.some((entry) => entry.day === day && entry.itemId === it.id && entry.status === 'done');
   const color = groupHex(groupOf(it));
   const siblings = groupItems(groupOf(it));
   const idx = siblings.findIndex((x) => x.id === it.id);
@@ -268,7 +285,10 @@ export function openQuick(it, from) {
       <div class="sheet-actions">
         ${b ? (b.status === 'done'
     ? `<button class="btn btn-ghost" data-q="undo">Not done yet</button>`
-    : `<button class="btn btn-primary" style="background:${color}" data-q="done">Done today</button>`) : ''}
+    : `<button class="btn btn-primary" style="background:${color}" data-q="done">Done today</button>`)
+          : extraDone
+            ? `<button class="btn btn-ghost" data-q="extra-undo">Undo today’s extra</button>`
+            : `<button class="btn btn-primary" style="background:${color}" data-q="extra-done">Do it today anyway</button>`}
         ${b && b.status === 'planned' ? `<button class="btn btn-ghost" data-q="skip">Sleep in</button>` : ''}
         ${b && b.status === 'skipped' ? `<button class="btn btn-ghost" data-q="undo">Wake it up</button>` : ''}
         <div class="row"><button class="btn btn-ghost" data-q="up" ${idx <= 0 ? 'disabled' : ''} aria-label="Move ${esc(it.title)} earlier">↑ Earlier</button><button class="btn btn-ghost" data-q="down" ${idx >= siblings.length - 1 ? 'disabled' : ''} aria-label="Move ${esc(it.title)} later">↓ Later</button></div>
@@ -281,6 +301,12 @@ export function openQuick(it, from) {
         if (!q) return;
         const act = q.dataset.q;
         if (act === 'edit') { s.close(); const { openEditor } = await import('./editor.js'); openEditor(it); return; }
+        if (act === 'extra-done' || act === 'extra-undo') {
+          await markRoutineToday(it.id, act === 'extra-done');
+          s.close();
+          toast(act === 'extra-done' ? `${it.title} done for today.` : `${it.title} is open again.`);
+          return;
+        }
         if (act === 'up' || act === 'down') {
           const ids = siblings.map((x) => x.id);
           const j = idx + (act === 'up' ? -1 : 1);

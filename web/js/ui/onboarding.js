@@ -39,8 +39,8 @@ export function openOnboarding() {
       const stepDay = () => `<div class="onb-step"><h2 class="sheet-title">Hello! When does your day run?</h2>
         <p class="m sheet-text">Arc plans around you, never the other way round.</p>
         <label class="field"><span class="m">What should Arc call you? (optional)</span><input class="input" type="text" data-name maxlength="40" value="${esc(p.name || '')}" autocomplete="given-name" placeholder="Your name"></label>
-        <div class="row"><label class="field"><span class="m">I wake up</span><input class="input" type="time" data-w value="${hhmm(p.wakeMin)}"></label>
-        <label class="field"><span class="m">Lights out</span><input class="input" type="time" data-s value="${hhmm(p.sleepMin)}"></label></div></div>`;
+        <div class="row"><label class="field"><span class="m">I wake up (AM/PM)</span><input class="input" type="time" data-w value="${hhmm(p.wakeMin)}"></label>
+        <label class="field"><span class="m">Lights out (AM/PM)</span><input class="input" type="time" data-s value="${hhmm(p.sleepMin)}"></label></div></div>`;
       const stepEnergy = () => `<div class="onb-step"><h2 class="sheet-title">When do you feel sharpest?</h2>
         <p class="m sheet-text">Tap to cycle: peak, okay, low. Big work goes to peaks.</p>
         <div class="seg" style="flex-direction:column">${BLOCKS.map(([l, k]) => `<button type="button" data-part="${k}" class="row" style="justify-content:space-between;width:100%" aria-label="${l}: ${parts[k]}"><span>${l}</span><span class="lvl-${parts[k]}" style="padding:4px 10px;border-radius:10px;color:var(--ink)">${{ high: 'peak', med: 'okay', low: 'low' }[parts[k]]}</span></button>`).join('')}</div></div>`;
@@ -51,7 +51,7 @@ export function openOnboarding() {
         <p class="m sheet-text">Start with a blank planner, or explore a marked sample week. You can remove sample data any time in Settings.</p>
         <div class="sheet-actions"><button class="btn btn-primary" data-empty>Start fresh</button><button class="btn btn-ghost" data-sample>Show me a sample week</button></div></div>`;
       const energy = () => {
-        const w = p.wakeMin, sl = p.sleepMin;
+        const w = p.wakeMin, sl = p.sleepMin < p.wakeMin ? p.sleepMin + 1440 : p.sleepMin;
         const cuts = [w, Math.min(w + 150, sl), Math.min(12 * 60 + 30, sl), Math.min(16 * 60, sl), Math.min(20 * 60, sl), sl];
         const keys = BLOCKS.map((b) => b[1]);
         const out = [];
@@ -77,7 +77,8 @@ export function openOnboarding() {
           if (step === 0) {
             p.name = box.querySelector('[data-name]').value.trim().slice(0, 40);
             const w = toMin(box.querySelector('[data-w]').value || '07:00'), sl = toMin(box.querySelector('[data-s]').value || '23:00');
-            if (sl <= w + 120) { toast('Leave at least two hours between waking and lights out.'); return; }
+            const awake = sl - w + (sl < w ? 1440 : 0);
+            if (awake < 120) { toast('Leave at least two hours between waking and lights out.'); return; }
             p.wakeMin = w; p.sleepMin = sl;
           }
           step++; draw(); return;

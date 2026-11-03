@@ -117,7 +117,14 @@ svg.doodle { display: block; flex: none; }
 .stamp { position: absolute; left: 50%; top: 42%; margin: -55px 0 0 -55px; width: 110px; height: 110px; z-index: 5; pointer-events: none; display: grid; place-items: center; }
 .stamp svg { position: absolute; inset: 0; }
 .stamp span { position: absolute; bottom: -18px; font-weight: 600; letter-spacing: 2px; font-size: 13px; text-transform: uppercase; }
+#finish-layer { position: fixed; inset: 0; z-index: 71; pointer-events: none; }
+#finish-layer > * { pointer-events: none; }
+.finish-stamp { position: fixed; left: 0; top: 0; margin: 0; z-index: 1; }
+.finish-stamp svg { width: 100%; height: 100%; }
+.finish-stamp span { bottom: -10px; font-size: 10px; }
 
 /* ---- empty states ---- */
 .empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; padding: 36px 12px; color: var(--muted); }
 .empty p { margin: 0; max-width: 280px; line-height: 1.4; }
+.focus-empty .focus-meta { max-width: calc(100% - 104px); text-align: left; }
+.day-shape { margin: -4px 0 2px; line-height: 1.35; }

@@ -44,6 +44,8 @@ func Fallback(typ string) string {
 		return "laptop"
 	case model.TypeEvent:
 		return "clock"
+	case model.TypeRoutine:
+		return "sparkle"
 	default:
 		return "sparkle"
 	}

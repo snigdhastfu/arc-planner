@@ -14,11 +14,14 @@ const smooth = (t) => t * t * (3 - 2 * t);
 const r1 = (n) => Math.round(n * 10) / 10;
 
 export function createArc(profile) {
-  const wake = profile.wakeMin, sleep = profile.sleepMin;
+  const wake = profile.wakeMin;
+  const sleep = profile.sleepMin < wake ? profile.sleepMin + 1440 : profile.sleepMin;
   const span = Math.max(60, sleep - wake);
   const energy = [...(profile.energy || [])].sort((a, b) => a.startMin - b.startMin);
   const rawY = (m) => {
-    for (const w of energy) if (m >= w.startMin && m < w.endMin) return LEVEL_Y[w.level] ?? LEVEL_Y.med;
+    for (const candidate of [m, m - 1440, m + 1440]) {
+      for (const w of energy) if (candidate >= w.startMin && candidate < w.endMin) return LEVEL_Y[w.level] ?? LEVEL_Y.med;
+    }
     return LEVEL_Y.med;
   };
   // Smooth the stepped energy levels: sample every 5 min, then a smoothstep-
@@ -129,7 +132,8 @@ export function tintFor(min) {
 /** Time-axis labels placed at their true positions. */
 export function axisLabels(arc) {
   const out = [];
-  const marks = [arc.wake, 12 * 60, 16 * 60, 21 * 60].filter((m, i, a) => m >= arc.wake && m <= arc.sleep && a.indexOf(m) === i);
+  const marks = [arc.wake, 12 * 60, 16 * 60, 21 * 60, 24 * 60, 24 * 60 + 12 * 60, 24 * 60 + 16 * 60]
+    .filter((m, i, a) => m >= arc.wake && m <= arc.sleep && a.indexOf(m) === i);
   for (const m of marks) out.push({ m, x: arc.xOf(m) });
   return out;
 }

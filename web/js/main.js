@@ -12,6 +12,7 @@ import { closeAllSheets } from './ui/sheet.js';
 import { roughBorder } from './rough.js';
 import { storageStatus } from './store.js';
 import { toast } from './dom.js';
+import { clearFinishEffects } from './fx.js';
 
 const screens = {
   today: () => import('./ui/today.js'),
@@ -119,6 +120,7 @@ addEventListener('arc-storagechange', () => {
 
 // ---- routing --------------------------------------------------------------------------
 async function show(r, prev) {
+  clearFinishEffects();
   closeAllSheets();
   const mod = await (screens[r.name] || screens.today)();
   const el = document.getElementById('screen');
@@ -140,6 +142,7 @@ async function show(r, prev) {
 
 // ---- boot ------------------------------------------------------------------------------
 async function boot() {
+  clearFinishEffects();
   const t0 = performance.now();
   if (globalThis.__arcBootSetStage) globalThis.__arcBootSetStage('registering the service worker');
   let swTimer;
@@ -203,6 +206,10 @@ async function boot() {
       if (globalThis.__arcBootReportError) globalThis.__arcBootReportError('Boot failed', e);
       else throw e;
     }
+
+    addEventListener('visibilitychange', () => {
+      if (!document.hidden) clearFinishEffects();
+    });
   }, minShow);
 
 }

@@ -115,10 +115,10 @@ async function complete() {
     pop(1.1); buzz(10);
     announce(`${it.title} done. ${routineLine(it.doodle, it.id)}`);
     if (!motion.reduced) {
-      stamp(tile, { color: '#111111', label: '', seed: it.id, size: 96 });
+      stamp(tile, { color: '#111111', label: '', seed: it.id, size: 58, finishEffect: true });
       react(tile.querySelector('svg.doodle'), it.doodle);
       const r = tile.getBoundingClientRect();
-      burst(r.left + r.width / 2, r.top + r.height / 2, { count: 10, seed: it.id, colors: [groupHex(group), '#FFF7E6', '#7CBB93'], doodles: ['sparkle', it.doodle] });
+      burst(r.left + r.width / 2, r.top + r.height / 2, { count: 10, seed: it.id, colors: [groupHex(group), '#FFF7E6', '#7CBB93'], doodles: ['sparkle', it.doodle], finishEffect: true });
       await wait(480);
       await erase(tile, { duration: 220 });
       await to(tile, { x: -280, rotate: -16, opacity: 0 }, { stiffness: 220, damping: 24 });
@@ -163,7 +163,7 @@ function renderDone(color) {
   to(tile, { scale: 1, opacity: 1 }, 'wobbly');
   drawOn(tile, { delay: 150, duration: 800 });
   chime();
-  shower(steps.map((s) => s.it.doodle).concat(['sparkle']));
+  shower(steps.map((s) => s.it.doodle).concat(['sparkle']), { finishEffect: true });
   announce(`${LABEL[group]} routines finished.`);
   root.querySelector('[data-close]').onclick = () => go('routines');
   root.querySelector('[data-today]').onclick = () => go('today');

@@ -22,6 +22,7 @@ export function openEditor(item = {}, { isNew = !item.id, block = null } = {}) {
   const today = T.dayKey();
   let it = JSON.parse(JSON.stringify({ type: 'assignment', title: '', doodleSource: 'auto', ...item }));
   if (it.type === 'routine' && !it.routine) it.routine = { anchor: 'morning', durMin: 2, order: 99, recur: { freq: 'daily', interval: 1 } };
+  if (it.type === 'routine' && !it.routine.recur) it.routine.recur = { freq: 'daily', interval: 1 };
   const sheet = openSheet({
     title: isNew ? 'New thing' : 'Edit',
     seed: it.id || 'new',
@@ -45,7 +46,9 @@ export function openEditor(item = {}, { isNew = !item.id, block = null } = {}) {
     const isWork = ['exam', 'assignment', 'project'].includes(it.type);
     const r = it.routine || {};
     const rec = r.recur || { freq: 'daily', interval: 1 };
-    const days = rec.days || [];
+    const days = rec.freq === 'daily' && (rec.interval || 1) === 1
+      ? [0, 1, 2, 3, 4, 5, 6]
+      : (rec.days || []);
     f.innerHTML = `
       <div class="seg" role="group" aria-label="Type">${TYPES.map(([k, l]) => `<button type="button" data-type="${k}" aria-pressed="${it.type === k}">${l}</button>`).join('')}</div>
       <div class="row" style="align-items:flex-end">
@@ -76,13 +79,13 @@ export function openEditor(item = {}, { isNew = !item.id, block = null } = {}) {
       ${it.type === 'routine' ? `
         <div class="field"><span class="m">When</span><div class="seg" role="group" aria-label="When">${ANCHORS.map(([k, l]) => `<button type="button" data-anchor="${k}" aria-pressed="${r.anchor === k}">${l}</button>`).join('')}</div></div>
         ${r.anchor === 'time' || r.anchor === 'daytime' ? `<label class="field"><span class="m">${r.anchor === 'time' ? 'At' : 'Around (optional)'}</span><input class="input" type="time" name="at" value="${r.atMin != null ? `${String(Math.floor(r.atMin / 60)).padStart(2, '0')}:${String(r.atMin % 60).padStart(2, '0')}` : ''}"></label>` : ''}
-        <label class="field"><span class="m">Little note (shows in the guided flow)</span><input class="input" name="detail" value="${esc(r.detail || '')}" placeholder="with water"></label>
+        <label class="field"><span class="m">Step details (shown in the guided flow)</span><input class="input" name="detail" value="${esc(r.detail || '')}" placeholder="cleanse, moisturize"></label>
         <div class="field"><span class="m">How long</span><div class="stepper"><button type="button" data-dur="-1" aria-label="Shorter">−</button><output data-dur-out>${r.durMin || 2} min</output><button type="button" data-dur="1" aria-label="Longer">+</button></div></div>
         <div class="field"><span class="m">Repeats</span><div class="seg" role="group" aria-label="Repeats">
           <button type="button" data-rec="daily" aria-pressed="${rec.freq === 'daily' && (rec.interval || 1) === 1}">Every day</button>
           <button type="button" data-rec="alt" aria-pressed="${rec.freq === 'daily' && rec.interval === 2}">Every other day</button>
           <button type="button" data-rec="weekly" aria-pressed="${rec.freq === 'weekly'}">Some days</button></div></div>
-        ${rec.freq === 'weekly' ? `<div class="seg" role="group" aria-label="Days">${WD.map((d, i) => `<button type="button" data-day="${i}" aria-pressed="${days.includes(i)}" aria-label="${T.weekdayName(i)}">${d}</button>`).join('')}</div>` : ''}
+        <div class="field"><span class="m">Days of the week</span><div class="seg" role="group" aria-label="Days">${WD.map((d, i) => `<button type="button" data-day="${i}" aria-pressed="${days.includes(i)}" aria-label="${T.weekdayName(i)}">${d}</button>`).join('')}</div></div>
         <label class="field"><span class="m">Until (optional)</span><input class="input" type="date" name="until" value="${esc(rec.until || '')}"></label>
         ${!isNew ? `<div class="row"><button type="button" class="btn btn-ghost btn-sm" data-move="-1">↑ Earlier in group</button><button type="button" class="btn btn-ghost btn-sm" data-move="1">↓ Later in group</button></div>` : ''}` : ''}
       <label class="field"><span class="m">Notes</span><textarea class="textarea" name="notes" rows="2">${esc(it.notes || '')}</textarea></label>
@@ -127,13 +130,18 @@ export function openEditor(item = {}, { isNew = !item.id, block = null } = {}) {
         if (b.dataset.rec === 'daily') Object.assign(r, { freq: 'daily', interval: 1, days: [] });
         if (b.dataset.rec === 'alt') Object.assign(r, { freq: 'daily', interval: 2, days: [] });
         if (b.dataset.rec === 'weekly') Object.assign(r, { freq: 'weekly', interval: 1, days: r.days && r.days.length ? r.days : [1, 2, 3, 4, 5] });
+        if (b.dataset.rec === 'daily' && r.freq === 'daily' && r.interval === 1) r.days = [];
         return render(s);
       }
       if (b.dataset.day) {
         const d = Number(b.dataset.day), r = it.routine.recur;
-        r.days = r.days.includes(d) ? r.days.filter((x) => x !== d) : [...r.days, d].sort();
-        b.setAttribute('aria-pressed', String(r.days.includes(d)));
-        return;
+        const selectedDays = r.freq === 'daily' && r.interval === 1 ? [0, 1, 2, 3, 4, 5, 6] : (r.days || []);
+        const nextDays = selectedDays.includes(d) ? selectedDays.filter((x) => x !== d) : [...selectedDays, d].sort();
+        if (!nextDays.length) { toast('Pick at least one day.'); return; }
+        Object.assign(r, nextDays.length === 7
+          ? { freq: 'daily', interval: 1, days: [] }
+          : { freq: 'weekly', interval: 1, days: nextDays });
+        return render(s);
       }
       if (b.dataset.move) {
         const sib = groupItems(groupOf(it)).map((x) => x.id);

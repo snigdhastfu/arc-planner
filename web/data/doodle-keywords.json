@@ -1,9 +1,13 @@
 {
  "pill": [
   "meds",
+  "medicine",
+  "medicines",
   "medication",
   "vitamin",
+  "vitamins",
   "supplement",
+  "supplements",
   "pill",
   "tablet",
   "capsule",
@@ -30,8 +34,15 @@
  ],
  "cream": [
   "cream",
+  "face cream",
+  "face wash",
+  "wash face",
   "moisturiser",
+  "moisturising",
+  "moisturise",
   "moisturizer",
+  "moisturizing",
+  "moisturize",
   "skincare",
   "lotion",
   "sunscreen",
@@ -46,6 +57,9 @@
  ],
  "water": [
   "water",
+  "shower",
+  "take a shower",
+  "bath",
   "hydrate",
   "drink",
   "glass"
@@ -111,7 +125,8 @@
   "exercise",
   "lift",
   "training",
-  "stretch"
+  "stretch",
+  "stretching"
  ],
  "pencil": [
   "write",
@@ -123,6 +138,9 @@
  ],
  "sparkle": [
   "clean",
+  "brush teeth",
+  "toothbrush",
+  "teeth",
   "treat",
   "fun",
   "reward",

@@ -70,7 +70,17 @@ func checkInvariants(t *testing.T, items []model.Item, prof model.Profile, nowS 
 		if a.Kind != model.KindEvent {
 			s, e := model.MustTime(a.Start).In(loc), model.MustTime(a.End).In(loc)
 			sm, em := model.MinOfDay(s, loc), model.MinOfDay(e, loc)
-			if model.DayKey(s, loc) != model.DayKey(e, loc) || sm < prof.WakeMin || em > prof.SleepMin {
+			sleep := prof.SleepMin
+			if sleep <= prof.WakeMin {
+				sleep += 24 * 60
+			}
+			if sm < prof.WakeMin {
+				sm += 24 * 60
+			}
+			if em < prof.WakeMin || model.DayKey(s, loc) != model.DayKey(e, loc) {
+				em += 24 * 60
+			}
+			if em < sm || sm < prof.WakeMin || em > sleep {
 				t.Errorf("block %s %s..%s outside wake..sleep", a.ItemID, a.Start, a.End)
 			}
 			for _, ev := range events {
@@ -143,6 +153,55 @@ func checkInvariants(t *testing.T, items []model.Item, prof model.Profile, nowS 
 		if !forced[k] && w > base {
 			t.Errorf("day %s work %d > capacity %d without a forced block", k, w, base)
 		}
+	}
+}
+
+func TestOvernightAwakeWindow(t *testing.T) {
+	profile := model.Profile{
+		TZ: "Asia/Kolkata", WakeMin: 6 * 60, SleepMin: 60, AmbitionMin: 240,
+		BlockMin: 50, OverloadFactor: 1.4,
+		Energy: []model.EnergyWindow{{StartMin: 20 * 60, EndMin: 25 * 60, Level: model.EnergyHigh}},
+	}
+	item := model.Item{ID: "night-routine", Type: model.TypeRoutine, Title: "Wind down",
+		Routine: &model.RoutineSpec{Anchor: "evening", DurMin: 10, Recur: model.Recur{Freq: "daily"}}}
+	work := model.Item{ID: "night-work", Type: model.TypeExam, Title: "Early exam prep",
+		Start: "2026-11-04T09:00:00+05:30", EffortMin: 30}
+	event := model.Item{ID: "evening-event", Type: model.TypeEvent, Title: "Evening event",
+		Start: "2026-11-02T18:00:00+05:30", End: "2026-11-03T00:30:00+05:30"}
+	plan := mustPlan(t, PlanRequest{Items: []model.Item{item}, Profile: profile, Now: "2026-11-02T18:00:00+05:30", HorizonDays: 2})
+	loc, err := time.LoadLocation(profile.TZ)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var foundToday bool
+	for _, block := range plan.Blocks {
+		if block.ItemID == item.ID {
+			start := model.MustTime(block.Start).In(loc)
+			if start.Hour() != 23 || start.Minute() != 30 {
+				t.Fatalf("overnight routine starts at %s, want 23:30", block.Start)
+			}
+			if model.DayKey(start, loc) == "2026-11-02" {
+				foundToday = true
+			}
+		}
+	}
+	if !foundToday {
+		t.Fatal("overnight routine was not planned on the first waking day")
+	}
+	plan = mustPlan(t, PlanRequest{Items: []model.Item{work, event}, Profile: profile, Now: "2026-11-02T18:00:00+05:30", HorizonDays: 2})
+	foundAfterMidnight := false
+	for _, block := range plan.Blocks {
+		if block.ItemID != work.ID {
+			continue
+		}
+		start := model.MustTime(block.Start).In(loc)
+		foundAfterMidnight = start.Hour() == 0 && start.Minute() == 30 && model.DayKey(start, loc) == "2026-11-03"
+	}
+	if !foundAfterMidnight {
+		t.Fatal("planner did not place work in the 00:30 energy window")
+	}
+	if got := profile.LevelAt(24*60 + 30); got != model.EnergyHigh {
+		t.Fatalf("overnight energy level = %q, want high", got)
 	}
 }
 

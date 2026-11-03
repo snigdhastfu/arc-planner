@@ -9,6 +9,7 @@ export const S = {
   items: [],
   profile: null,
   plan: { blocks: [], atRisk: [], warnings: [], generatedAt: '' },
+  routineLog: [],
   meta: {},
   proposal: null, // { proposed, changes, drifted }
   drifted: false,
@@ -33,6 +34,19 @@ export const DEFAULT_ENERGY = [
 export function defaultProfile() {
   return { tz: T.deviceTZ, wakeMin: 420, sleepMin: 1380, ambitionMin: 240, dayOverrides: {}, energy: DEFAULT_ENERGY.map((e) => ({ ...e })), blockMin: 50, overloadFactor: 1.4 };
 }
+export async function markRoutineToday(itemId, done = true) {
+  const day = T.scheduleDayKey(T.now(), S.profile.wakeMin);
+  const key = [day, itemId];
+  if (done) {
+    const log = { day, itemId, status: 'done', at: T.iso(T.now()), extra: true };
+    await db.put('routineLog', log);
+    S.routineLog = [...S.routineLog.filter((entry) => !(entry.day === day && entry.itemId === itemId)), log];
+  } else {
+    await db.del('routineLog', key);
+    S.routineLog = S.routineLog.filter((entry) => !(entry.day === day && entry.itemId === itemId));
+  }
+  emit('routine-log', { itemId, day, done });
+}
 
 const uid = (p = 'it') => `${p}-${(crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)).replace(/-/g, '').slice(0, 12)}`;
 const META_DEFAULTS = { onboarded: false, sound: false, logo: document.body.dataset.logo || 'B', motion: 'full', timer: null, undo: null };
@@ -43,28 +57,38 @@ export async function initLocal() {
   await db.open();
   let values;
   try {
-    values = await Promise.all([db.all('items'), db.get('profile', 'profile'), db.all('meta'), db.all('blocks')]);
+    values = await Promise.all([db.all('items'), db.get('profile', 'profile'), db.all('meta'), db.all('blocks'), db.all('routineLog')]);
   } catch (e) {
     console.warn('IndexedDB read failed during boot; continuing with fallback storage:', e);
     await db.fallbackToMemory(e);
-    values = await Promise.all([db.all('items'), db.get('profile', 'profile'), db.all('meta'), db.all('blocks')]);
+    values = await Promise.all([db.all('items'), db.get('profile', 'profile'), db.all('meta'), db.all('blocks'), db.all('routineLog')]);
   }
   S.persistent = db.persistent();
   S.storage = db.storageStatus();
-  const [items, prof, metas, blocks] = values;
+  const [items, prof, metas, blocks, routineLog] = values;
   S.items = items;
+  S.routineLog = routineLog;
   S.profile = prof ? prof.value : defaultProfile();
   T.setTZ(S.profile.tz);
   S.meta = { ...META_DEFAULTS };
   metas.forEach((m) => { S.meta[m.key] = m.value; });
-  const today = T.dayKey();
   const saved = S.meta.plan || {};
-  S.plan = { blocks: blocks.filter((b) => b.day >= today).map(stripDay).sort((a, b) => a.start.localeCompare(b.start) || a.id.localeCompare(b.id)), atRisk: saved.atRisk || [], warnings: saved.warnings || [], generatedAt: saved.generatedAt || '' };
+  const scheduleToday = T.scheduleDayKey(T.now(), S.profile.wakeMin);
+  S.plan = { blocks: blocks.filter((b) => b.day >= scheduleToday).map(stripDay).sort((a, b) => a.start.localeCompare(b.start) || a.id.localeCompare(b.id)), atRisk: saved.atRisk || [], warnings: saved.warnings || [], generatedAt: saved.generatedAt || '' };
 }
 /** Core half: once the wasm is ready, refresh the plan from the Go planner. */
 export async function initCore() {
   await loadCore();
   try { S.version = call('version').version; } catch (_) { S.version = '?'; }
+  for (const it of S.items) {
+    if (it.doodleSource === 'user') continue;
+    const matched = call('matchDoodle', { title: it.title, type: it.type }).doodle;
+    if (it.doodle !== matched) {
+      it.doodle = matched;
+      it.doodleSource = 'auto';
+      await db.put('items', it);
+    }
+  }
   try {
     await replan({ quiet: true });
   } catch (e) {
@@ -98,19 +122,19 @@ function existingBlocksChanged(current, proposed) {
 
 async function storedBlocksFromToday() {
   const all = await db.all('blocks');
-  const today = T.dayKey();
+  const today = T.scheduleDayKey(T.now(), S.profile.wakeMin);
   return all.filter((b) => b.day >= today).map(stripDay);
 }
 const stripDay = ({ day, ...b }) => b;
 
 /** Persist plan blocks: replace every stored block from today onward. */
 async function persistPlan(plan) {
-  const today = T.dayKey();
+  const today = T.scheduleDayKey(T.now(), S.profile.wakeMin);
   const all = await db.all('blocks');
   const keep = new Set(plan.blocks.map((b) => b.id));
   const stale = all.filter((b) => b.day >= today && !keep.has(b.id)).map((b) => b.id);
   if (stale.length) await db.delMany('blocks', stale);
-  await db.putMany('blocks', plan.blocks.map((b) => ({ ...b, day: T.dayKey(new Date(b.start)) })));
+  await db.putMany('blocks', plan.blocks.map((b) => ({ ...b, day: T.scheduleDayKey(new Date(b.start), S.profile.wakeMin) })));
   await db.put('meta', { key: 'plan', value: { atRisk: plan.atRisk, warnings: plan.warnings, generatedAt: plan.generatedAt } });
 }
 
@@ -142,7 +166,7 @@ export function checkDrift() {
 export async function addItem(item) {
   await core();
   const it = { ...item, id: item.id && !item.id.startsWith('qa-') ? item.id : uid(), updatedAt: T.iso(T.now()) };
-  if (!it.doodle) it.doodle = call('matchDoodle', { title: it.title, type: it.type }).doodle;
+  if (it.doodleSource !== 'user' || !it.doodle) it.doodle = call('matchDoodle', { title: it.title, type: it.type }).doodle;
   if (!it.doodleSource) it.doodleSource = 'auto';
   S.items.push(it);
   await db.put('items', it);
@@ -227,9 +251,15 @@ export async function blockAction(blockId, action, extra = {}) {
     S.plan = res.plan;
     const b = res.plan.blocks.find((x) => x.id === blockId);
     if (b && b.kind === 'routine') {
-      const day = T.dayKey(new Date(b.start));
-      if (b.status === 'planned') await db.del('routineLog', [day, b.itemId]);
-      else await db.put('routineLog', { day, itemId: b.itemId, status: b.status, at: T.iso(T.now()) });
+      const day = T.scheduleDayKey(new Date(b.start), S.profile.wakeMin);
+      if (b.status === 'planned') {
+        await db.del('routineLog', [day, b.itemId]);
+        S.routineLog = S.routineLog.filter((entry) => !(entry.day === day && entry.itemId === b.itemId));
+      } else {
+        const log = { day, itemId: b.itemId, status: b.status, at: T.iso(T.now()) };
+        await db.put('routineLog', log);
+        S.routineLog = [...S.routineLog.filter((entry) => !(entry.day === day && entry.itemId === b.itemId)), log];
+      }
     }
     if (S.meta.timer && S.meta.timer.blockId === blockId && action !== 'snooze') await setMeta('timer', null);
     await persistPlan(S.plan);
@@ -260,8 +290,12 @@ export async function editBlock(blockId, startDate, durationMin) {
   const start = new Date(startDate);
   const end = new Date(start.getTime() + durationMin * 60000);
   if (Number.isNaN(start.getTime())) throw new Error('Choose a valid block start time.');
-  const startMin = T.minOfDay(start), endMin = T.minOfDay(end);
-  if (startMin < S.profile.wakeMin || endMin > S.profile.sleepMin || T.dayKey(end) !== T.dayKey(start)) {
+  const wake = S.profile.wakeMin;
+  const sleep = S.profile.sleepMin < wake ? S.profile.sleepMin + 1440 : S.profile.sleepMin;
+  const scheduleDay = T.scheduleDayKey(start, wake);
+  const startMin = T.daysBetween(scheduleDay, T.dayKey(start)) * 1440 + T.minOfDay(start);
+  const endMin = T.daysBetween(scheduleDay, T.dayKey(end)) * 1440 + T.minOfDay(end);
+  if (startMin < wake || endMin > sleep || T.scheduleDayKey(end, wake) !== scheduleDay) {
     throw new Error('Keep this block inside your waking hours on one day.');
   }
   if (clashAt(blockId, start, end)) throw new Error('That time overlaps another planned block.');
@@ -357,7 +391,7 @@ export const postcards = () => db.all('postcards');
 export async function loadSample() {
   await core();
   const sample = await fetch('data/sample.json').then((r) => r.json());
-  const today = T.dayKey();
+  const today = T.scheduleDayKey(T.now(), S.profile.wakeMin);
   const when = (spec) => (spec ? T.iso(T.at(T.addDays(today, spec.day), spec.min)) : '');
   const items = sample.items.map((s) => {
     const it = { ...s };
@@ -374,10 +408,12 @@ export async function loadSample() {
   await setProfile(S.profile, { rebuild: false });
   // A lived-in feel: yesterday's routines all done, and today's first two.
   const yesterday = T.addDays(today, -1);
-  await db.putMany('routineLog', items.filter((i) => i.type === 'routine').map((i) => ({ day: yesterday, itemId: i.id, status: 'done', at: T.iso(T.now()) })));
+  const logs = items.filter((i) => i.type === 'routine').map((i) => ({ day: yesterday, itemId: i.id, status: 'done', at: T.iso(T.now()) }));
+  await db.putMany('routineLog', logs);
+  S.routineLog = logs;
   for (const title of sample.doneToday || []) {
     const it = items.find((i) => i.title === title);
-    const b = it && S.plan.blocks.find((x) => x.itemId === it.id && T.dayKey(new Date(x.start)) === today);
+    const b = it && S.plan.blocks.find((x) => x.itemId === it.id && T.scheduleDayKey(new Date(x.start), S.profile.wakeMin) === today);
     if (b && new Date(b.start) < T.now()) await blockAction(b.id, 'done');
   }
   await setMeta('onboarded', true);
@@ -395,6 +431,7 @@ export async function clearSampleData() {
   const logs = await db.all('routineLog');
   for (const block of blocks) if (ids.has(block.itemId)) await db.del('blocks', block.id);
   for (const log of logs) if (ids.has(log.itemId)) await db.del('routineLog', [log.day, log.itemId]);
+  S.routineLog = S.routineLog.filter((log) => !ids.has(log.itemId));
   S.items = S.items.filter((item) => !ids.has(item.id));
   S.plan.blocks = S.plan.blocks.filter((block) => !ids.has(block.itemId));
   await setMeta('sampleData', false);
@@ -405,6 +442,7 @@ export async function clearSampleData() {
 export async function eraseEverything() {
   await db.eraseAll();
   S.items = []; S.profile = defaultProfile(); S.meta = { ...META_DEFAULTS, onboarded: true };
+  S.routineLog = [];
   S.plan = { blocks: [], atRisk: [], warnings: [], generatedAt: '' };
   S.proposal = null; S.drifted = false;
   S.persistent = db.persistent();
@@ -436,7 +474,7 @@ export async function importBackup(data) {
   validateBackup(data);
   await db.eraseAll();
   await db.putMany('items', data.items);
-  await db.putMany('blocks', data.blocks.map((b) => ({ ...b, day: b.day || T.dayKey(new Date(b.start)) })));
+  await db.putMany('blocks', data.blocks.map((b) => ({ ...b, day: b.day || T.scheduleDayKey(new Date(b.start), data.profile.wakeMin) })));
   await db.putMany('routineLog', data.routineLog);
   await db.putMany('postcards', data.postcards);
   for (const m of data.meta) await db.put('meta', m);

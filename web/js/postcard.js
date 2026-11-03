@@ -28,7 +28,7 @@ async function fontFace() {
 
 /** Build the postcard SVG markup (self-contained so it can be rasterised). */
 export async function postcardSVG(day) {
-  const blocks = S.plan.blocks.filter((b) => T.dayKey(new Date(b.start)) === day);
+  const blocks = S.plan.blocks.filter((b) => T.scheduleDayKey(new Date(b.start), S.profile.wakeMin) === day);
   const res = call('postcard', { day, blocks, items: S.items, seed: day });
   const [y, m, d] = day.split('-').map(Number);
   const dateLine = `${T.weekdayShort(T.weekdayOf(day)).toUpperCase()} ${d} ${T.monthShort(m - 1).toUpperCase()}`;

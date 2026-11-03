@@ -80,7 +80,15 @@ func newEngine(items []model.Item, prof model.Profile, nowS string, horizon int,
 	}
 
 	nowMin := model.MinOfDay(e.now, loc)
-	e.earliest = model.AtMin(e.now, roundUp5(nowMin), loc)
+	sleepEnd := effectiveSleepMinute(p.WakeMin, p.SleepMin)
+	overnight := sleepEnd > 24*60
+	anchorDate := e.now
+	planningMin := nowMin
+	if overnight && nowMin < p.WakeMin {
+		anchorDate = anchorDate.AddDate(0, 0, -1)
+		planningMin += 24 * 60
+	}
+	e.earliest = model.AtMin(anchorDate, roundUp5(planningMin), loc)
 	if horizon <= 0 {
 		horizon = 21
 		for _, it := range e.sorted {
@@ -97,11 +105,11 @@ func newEngine(items []model.Item, prof model.Profile, nowS string, horizon int,
 	if horizon > 120 {
 		horizon = 120
 	}
-	y, m, d := e.now.Date()
+	y, m, d := anchorDate.Date()
 	for i := 0; i < horizon; i++ {
 		date := time.Date(y, m, d+i, 0, 0, 0, 0, loc)
 		key := date.Format("2006-01-02")
-		dd := &day{idx: i, key: key, date: date, wake: p.WakeMin, n: ceilDiv(p.SleepMin-p.WakeMin, slotMin), past: p.WakeMin}
+		dd := &day{idx: i, key: key, date: date, wake: p.WakeMin, n: ceilDiv(sleepEnd-p.WakeMin, slotMin), past: p.WakeMin}
 		dd.busy = make([]bool, dd.n)
 		base := p.AmbitionMin
 		if v, ok := p.DayOverrides[key]; ok {
@@ -110,7 +118,7 @@ func newEngine(items []model.Item, prof model.Profile, nowS string, horizon int,
 		dd.cap = base
 		dd.hard = int(math.Floor(float64(base) * p.OverloadFactor))
 		if i == 0 {
-			dd.past = max(p.WakeMin, roundUp5(nowMin))
+			dd.past = max(p.WakeMin, roundUp5(planningMin))
 		}
 		e.dayIdx[key] = i
 		e.days = append(e.days, dd)
@@ -401,13 +409,20 @@ func (e *engine) anchorMin(spec *model.RoutineSpec) int {
 		}
 		return 13 * 60
 	case "evening":
-		return e.p.SleepMin - 90
+		return effectiveSleepMinute(e.p.WakeMin, e.p.SleepMin) - 90
 	default:
 		if spec.AtMin != nil {
 			return *spec.AtMin
 		}
 		return 13 * 60
 	}
+}
+
+func effectiveSleepMinute(wake, sleep int) int {
+	if sleep < wake {
+		return sleep + 24*60
+	}
+	return sleep
 }
 
 func (e *engine) placeRoutines(ex []model.Block) {

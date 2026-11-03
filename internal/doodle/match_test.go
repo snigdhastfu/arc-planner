@@ -26,6 +26,11 @@ func TestMatch(t *testing.T) {
 		{"chemistry", model.TypeExam, "flask"},    // "chem" must not match inside "chemistry"... but chemistry itself does
 		{"breadth", model.TypeRoutine, "sparkle"}, // "read" inside a word does not count
 		{"MEDS!!", model.TypeRoutine, "pill"},     // punctuation is a boundary
+		{"night skincare", model.TypeRoutine, "cream"},
+		{"shower", model.TypeRoutine, "water"},
+		{"brush teeth", model.TypeRoutine, "sparkle"},
+		{"take vitamins", model.TypeRoutine, "pill"},
+		{"stretching", model.TypeRoutine, "dumbbell"},
 	}
 	for _, c := range cases {
 		if got := Match(c.title, c.typ); got != c.want {

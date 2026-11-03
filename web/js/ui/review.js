@@ -129,7 +129,7 @@ function wire() {
         if (!accepted.has(id)) {
           accepted.add(id);
           row.classList.remove('skipped');
-          if (!motion.reduced) { const st = stamp(row.querySelector('.change-icon'), { color: '#7CBB93', label: '', seed: id, size: 56 }); setTimeout(() => to(st, { opacity: 0 }, 'gentle').then(() => st.remove()), 700); }
+          if (!motion.reduced) stamp(row.querySelector('.change-icon'), { color: '#7CBB93', label: '', seed: id, size: 52, finishEffect: true });
           pop(1.2);
         }
       } else if (accepted.has(id)) {

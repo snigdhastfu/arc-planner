@@ -37,6 +37,14 @@ export function dayKey(d = now()) {
   return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`;
 }
 export function minOfDay(d = now()) { const p = parts(d); return p.hh * 60 + p.mm; }
+export function scheduleDayKey(d, wakeMin) {
+  const key = dayKey(d);
+  return minOfDay(d) < wakeMin ? addDays(key, -1) : key;
+}
+export function scheduleMinute(d, wakeMin) {
+  const key = scheduleDayKey(d, wakeMin);
+  return daysBetween(key, dayKey(d)) * 1440 + minOfDay(d);
+}
 
 /** The instant for a wall-clock time on a day key in the profile zone. */
 export function at(dayKeyStr, min) {

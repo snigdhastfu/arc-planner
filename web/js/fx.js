@@ -5,6 +5,26 @@ import { doodleSVG } from './doodle.js';
 import { roughCircle, rng } from './rough.js';
 
 const layer = () => document.getElementById('layer');
+const finishTimers = new Set();
+
+function finishLayer() {
+  let el = document.getElementById('finish-layer');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'finish-layer';
+    el.setAttribute('aria-hidden', 'true');
+    layer().appendChild(el);
+  }
+  return el;
+}
+
+function removeFinishLater(el, delay = 1500) {
+  const timer = setTimeout(() => {
+    finishTimers.delete(timer);
+    el.remove();
+  }, delay);
+  finishTimers.add(timer);
+}
 
 function fxNode(html, x, y, owner = '') {
   const el = document.createElement('div');
@@ -18,7 +38,7 @@ function fxNode(html, x, y, owner = '') {
 }
 
 /** A burst of sparkles and tiny doodle fragments from a point. */
-export function burst(x, y, { colors = ['#FFF7E6', '#FDDEB2', '#7CBB93', '#F7C8D3'], count = 10, seed = 'b', doodles = ['sparkle'], owner = '' } = {}) {
+export function burst(x, y, { colors = ['#FFF7E6', '#FDDEB2', '#7CBB93', '#F7C8D3'], count = 10, seed = 'b', doodles = ['sparkle'], owner = '', finishEffect = false } = {}) {
   if (motion.reduced) return;
   const R = rng(seed + x + y);
   for (let i = 0; i < count; i++) {
@@ -29,6 +49,11 @@ export function burst(x, y, { colors = ['#FFF7E6', '#FDDEB2', '#7CBB93', '#F7C8D
       ? `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 10 C4 6 7 4 10 2" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"/></svg>`
       : doodleSVG(doodles[i % doodles.length], size, c, { boil: false, draw: false });
     const el = fxNode(html, x - size / 2, y - size / 2, owner);
+    if (finishEffect) {
+      el.dataset.finishEffect = '';
+      finishLayer().appendChild(el);
+      removeFinishLater(el);
+    }
     const a = (i / count) * Math.PI * 2 + R() * 0.6;
     const dist = 50 + R() * 60;
     set(el, { scale: 0.3, opacity: 1, rotate: R() * 90 - 45 });
@@ -38,7 +63,7 @@ export function burst(x, y, { colors = ['#FFF7E6', '#FDDEB2', '#7CBB93', '#F7C8D
 }
 
 /** An ink stamp that slams onto an element: a wobbly ring with a check. */
-export function stamp(host, { color = '#7CBB93', label = 'Done', seed = 'stamp', size = 110, owner = '' } = {}) {
+export function stamp(host, { color = '#7CBB93', label = 'Done', seed = 'stamp', size = 110, owner = '', finishEffect = false } = {}) {
   const el = document.createElement('div');
   el.className = 'stamp';
   if (owner) el.dataset.fxOwner = owner;
@@ -48,6 +73,29 @@ export function stamp(host, { color = '#7CBB93', label = 'Done', seed = 'stamp',
     <path d="${ring}" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
     <path d="M${size * 0.3} ${size * 0.52} l${size * 0.13} ${size * 0.13} l${size * 0.27} ${size * -0.3}" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
   </svg><span style="color:${color}">${label}</span>`;
+  if (finishEffect) {
+    const rect = host.getBoundingClientRect();
+    el.classList.add('finish-stamp');
+    el.dataset.finishEffect = '';
+    el.style.left = `${rect.left + rect.width * 0.78}px`;
+    el.style.top = `${rect.top + 8}px`;
+    el.style.width = `${size}px`;
+    el.style.height = `${size}px`;
+    finishLayer().appendChild(el);
+    removeFinishLater(el);
+    setTimeout(() => {
+      if (!el.isConnected) return;
+      el.style.transition = 'opacity 280ms ease';
+      el.style.opacity = '0';
+    }, 900);
+    if (motion.reduced) {
+      el.style.opacity = '0';
+      return el;
+    }
+    set(el, { scale: 1.35, opacity: 0, rotate: -18 });
+    to(el, { scale: 1, opacity: 1, rotate: -10 }, { stiffness: 520, damping: 22 });
+    return el;
+  }
   host.appendChild(el);
   if (motion.reduced) { el.style.opacity = '1'; return el; }
   set(el, { scale: 2.4, opacity: 0, rotate: -24 });
@@ -83,14 +131,25 @@ export function clearFx(owner) {
   document.querySelectorAll(`[data-fx-owner="${owner}"]`).forEach((el) => el.remove());
 }
 
+export function clearFinishEffects() {
+  finishTimers.forEach((timer) => clearTimeout(timer));
+  finishTimers.clear();
+  document.querySelectorAll('[data-finish-effect]').forEach((el) => el.remove());
+}
+
 /** Celebratory shower of doodles falling from the top. */
-export function shower(names, { count = 18, colors = ['#FDDEB2', '#FFF7E6', '#F7C8D3', '#B3D7F2', '#7CBB93'] } = {}) {
+export function shower(names, { count = 18, colors = ['#FDDEB2', '#FFF7E6', '#F7C8D3', '#B3D7F2', '#7CBB93'], finishEffect = false } = {}) {
   if (motion.reduced) return;
   const W = innerWidth;
   const R = rng('shower' + count + names.join());
   for (let i = 0; i < count; i++) {
     const size = 26 + R() * 22;
     const el = fxNode(doodleSVG(names[i % names.length], size, colors[i % colors.length], { boil: false, draw: false }), R() * (W - size), -size - 10);
+    if (finishEffect) {
+      el.dataset.finishEffect = '';
+      finishLayer().appendChild(el);
+      removeFinishLater(el);
+    }
     set(el, { rotate: R() * 60 - 30, opacity: 1 });
     setTimeout(() => {
       to(el, { y: innerHeight * (0.55 + R() * 0.4), rotate: R() * 120 - 60 }, { stiffness: 18 + R() * 10, damping: 6 });

@@ -24,6 +24,13 @@ export function mount(el) {
 
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const toMin = (v) => { const [h, m] = v.split(':').map(Number); return h * 60 + (m || 0); };
+const sleepEnd = (p) => p.sleepMin < p.wakeMin ? p.sleepMin + 1440 : p.sleepMin;
+const awakeMinutes = (p) => Math.max(0, sleepEnd(p) - p.wakeMin);
+const clockLabel = (m) => T.clockMin(m).toUpperCase();
+function shapeLabel(p) {
+  const overnight = p.sleepMin < p.wakeMin;
+  return `${clockLabel(p.wakeMin)} to ${clockLabel(p.sleepMin)}${overnight ? ' next day' : ''} · ${Math.floor(awakeMinutes(p) / 60)} h awake`;
+}
 
 /** Repo link derived from the GitHub Pages URL (works on forks); null elsewhere. */
 export function repoURL() {
@@ -89,13 +96,14 @@ function render() {
 function renderDay() {
   if (!root) return;
   const p = S.profile;
-  const today = T.dayKey();
+  const today = T.scheduleDayKey(T.now(), p.wakeMin);
   const ov = (p.dayOverrides || {})[today];
   const mode = ov === undefined ? 'normal' : ov < p.ambitionMin ? 'light' : ov > p.ambitionMin ? 'push' : 'normal';
   root.querySelector('[data-day-body]').innerHTML = `
     <label class="field"><span class="m">Your name</span><input class="input" type="text" data-name maxlength="40" value="${esc(p.name || '')}" autocomplete="given-name" placeholder="Your name"></label>
-    <div class="row"><label class="field"><span class="m">Wake up</span><input class="input" type="time" data-wake value="${hhmm(p.wakeMin)}"></label>
-    <label class="field"><span class="m">Lights out</span><input class="input" type="time" data-sleep value="${hhmm(p.sleepMin)}"></label></div>
+    <div class="row"><label class="field"><span class="m">Wake up (AM/PM)</span><input class="input" type="time" data-wake value="${hhmm(p.wakeMin)}"></label>
+    <label class="field"><span class="m">Lights out (AM/PM)</span><input class="input" type="time" data-sleep value="${hhmm(p.sleepMin)}"></label></div>
+    <p class="m day-shape" data-day-shape>${esc(shapeLabel(p))}</p>
     <div class="field"><span class="m">Daily deep-work goal</span><div class="stepper"><button type="button" data-amb="-30" aria-label="Lower goal">−</button><output>${T.hours(p.ambitionMin)}</output><button type="button" data-amb="30" aria-label="Raise goal">+</button></div></div>
     <div class="field"><span class="m">Today is a…</span><div class="seg" role="group" aria-label="Today's goal">
       <button type="button" data-mode="light" aria-pressed="${mode === 'light'}">Light day</button><button type="button" data-mode="normal" aria-pressed="${mode === 'normal'}">Normal</button><button type="button" data-mode="push" aria-pressed="${mode === 'push'}">Push day</button></div></div>
@@ -108,39 +116,60 @@ function renderEnergy() {
   const periodBar = root.querySelector('[data-energy-periods]');
   const bounds = energyBounds(p);
   periodBar.innerHTML = bounds.map(({ name, label, start, end }) => {
-    const level = p.energy.find((w) => (start + end) / 2 >= w.startMin && (start + end) / 2 < w.endMin);
-    const value = level ? level.level : 'med';
+    const value = energyLevel(p, (start + end) / 2);
     const text = LV_LABEL[value];
     return `<button type="button" class="lvl-${value}" data-energy-period="${name}" aria-label="${label} ${T.clockMin(start)} to ${T.clockMin(end)}: ${text} energy">${label}<br>${text}</button>`;
   }).join('');
   const hours = [];
-  for (let m = Math.floor(p.wakeMin / 60) * 60; m < p.sleepMin; m += 60) hours.push(m);
-  const lvl = (m) => { const w = p.energy.find((e) => m + 30 >= e.startMin && m + 30 < e.endMin); return w ? w.level : 'med'; };
-  bar.innerHTML = hours.map((m) => `<button type="button" class="lvl-${lvl(m)}" data-hour="${m}" aria-label="${T.clockMin(m)}: ${LV_LABEL[lvl(m)]} energy">${T.clockMin(m).replace(' ', '')}</button>`).join('');
+  for (let m = Math.floor(p.wakeMin / 60) * 60; m < sleepEnd(p); m += 60) hours.push(m);
+  const lvl = (m) => energyLevel(p, m + 30);
+  bar.innerHTML = hours.map((m) => `<button type="button" class="lvl-${lvl(m)}" data-hour="${m}" aria-label="${T.clockMin(m).toUpperCase()}: ${LV_LABEL[lvl(m)]} energy">${T.clockMin(m).toUpperCase()}</button>`).join('');
   root.querySelector('[data-energy-legend]').innerHTML = '<span style="color:var(--teal)">■</span> peak &nbsp; <span style="color:var(--navajo)">■</span> okay &nbsp; <span style="color:var(--lagoon);-webkit-text-stroke:1px var(--mist)">■</span> low';
 }
 
 function energyBounds(p) {
-  const span = p.sleepMin - p.wakeMin;
-  const first = span < 180 ? p.wakeMin + Math.round(span / 3) : Math.max(p.wakeMin + 60, Math.min(12 * 60, p.sleepMin - 120));
-  const second = span < 180 ? p.wakeMin + Math.round(span * 2 / 3) : Math.max(first + 60, Math.min(17 * 60, p.sleepMin - 60));
+  const end = sleepEnd(p);
+  const span = end - p.wakeMin;
+  const first = span < 180 ? p.wakeMin + Math.round(span / 3) : Math.max(p.wakeMin + 60, Math.min(12 * 60, end - 120));
+  const second = span < 180 ? p.wakeMin + Math.round(span * 2 / 3) : Math.max(first + 60, Math.min(17 * 60, end - 60));
   return [
     { name: 'morning', label: 'Morning', start: p.wakeMin, end: first },
     { name: 'daytime', label: 'Daytime', start: first, end: second },
-    { name: 'evening', label: 'Evening', start: second, end: p.sleepMin },
+    { name: 'evening', label: 'Evening', start: second, end },
   ].filter((w) => w.end > w.start);
+}
+
+function energyWindows(p) {
+  const start = p.wakeMin, end = sleepEnd(p);
+  const out = [];
+  for (const w of p.energy || []) {
+    for (const shift of [-1440, 0, 1440]) {
+      const a = Math.max(start, w.startMin + shift);
+      const b = Math.min(end, w.endMin + shift);
+      if (b > a) out.push({ startMin: a, endMin: b, level: w.level });
+    }
+  }
+  return out.sort((a, b) => a.startMin - b.startMin);
+}
+
+function energyLevel(p, m) {
+  const windows = energyWindows(p);
+  const w = windows.find((entry) => m >= entry.startMin && m < entry.endMin);
+  return w ? w.level : 'med';
 }
 
 function updateEnergyPeriod(p, period, level) {
   const target = energyBounds(p).find((w) => w.name === period);
   if (!target) return p.energy;
-  const points = new Set([p.wakeMin, p.sleepMin, target.start, target.end]);
-  p.energy.forEach((w) => { points.add(Math.max(p.wakeMin, w.startMin)); points.add(Math.min(p.sleepMin, w.endMin)); });
-  const cuts = [...points].filter((m) => m >= p.wakeMin && m <= p.sleepMin).sort((a, b) => a - b);
+  const end = sleepEnd(p);
+  const windows = energyWindows(p);
+  const points = new Set([p.wakeMin, end, target.start, target.end]);
+  windows.forEach((w) => { points.add(w.startMin); points.add(w.endMin); });
+  const cuts = [...points].filter((m) => m >= p.wakeMin && m <= end).sort((a, b) => a - b);
   const out = [];
   for (let i = 0; i < cuts.length - 1; i++) {
     const startMin = cuts[i], endMin = cuts[i + 1], mid = (startMin + endMin) / 2;
-    const existing = p.energy.find((w) => mid >= w.startMin && mid < w.endMin);
+    const existing = windows.find((w) => mid >= w.startMin && mid < w.endMin);
     const nextLevel = mid >= target.start && mid < target.end ? level : (existing ? existing.level : 'med');
     const previous = out[out.length - 1];
     if (previous && previous.level === nextLevel) previous.endMin = endMin;
@@ -182,10 +211,11 @@ async function renderCards() {
 }
 
 function energyFromHours(p, hourLevels) {
-  // merge consecutive hours into windows; clamp to wake/sleep
+  // Merge consecutive hours into windows; clock minutes above 1440 are next day.
   const out = [];
+  const end = sleepEnd(p);
   for (const [m, l] of hourLevels) {
-    const s = Math.max(p.wakeMin, m), e = Math.min(p.sleepMin, m + 60);
+    const s = Math.max(p.wakeMin, m), e = Math.min(end, m + 60);
     const last = out[out.length - 1];
     if (last && last.level === l && last.endMin === s) last.endMin = e;
     else out.push({ startMin: s, endMin: e, level: l });
@@ -203,13 +233,22 @@ function wire() {
     }
     if (t.matches('[data-wake], [data-sleep]')) {
       const p = { ...S.profile, wakeMin: toMin(root.querySelector('[data-wake]').value || '07:00'), sleepMin: toMin(root.querySelector('[data-sleep]').value || '23:00') };
-      if (p.sleepMin <= p.wakeMin + 120) { toast('Leave at least two hours between waking and lights out.'); renderDay(); return; }
+      const span = p.sleepMin - p.wakeMin + (p.sleepMin < p.wakeMin ? 1440 : 0);
+      if (span < 120) { toast('Leave at least two hours between waking and lights out.'); renderDay(); return; }
       await setProfile(p);
       renderEnergy();
+      const shape = root.querySelector('[data-day-shape]');
+      if (shape) shape.textContent = shapeLabel(p);
       toast('Day shape saved. Review any proposed block changes before they move.');
     }
     if (t.matches('[data-ics]') && t.files[0]) return previewIcs(t.files[0], t);
     if (t.matches('[data-restore]') && t.files[0]) return restore(t.files[0], t);
+  };
+  root.oninput = (e) => {
+    if (!e.target.matches('[data-wake], [data-sleep]')) return;
+    const p = { ...S.profile, wakeMin: toMin(root.querySelector('[data-wake]').value || '07:00'), sleepMin: toMin(root.querySelector('[data-sleep]').value || '23:00') };
+    const shape = root.querySelector('[data-day-shape]');
+    if (shape) shape.textContent = shapeLabel(p);
   };
   root.onclick = async (e) => {
     const b = e.target.closest('button');

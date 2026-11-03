@@ -78,3 +78,13 @@ func TestProfileDefaultsAndLevels(t *testing.T) {
 		t.Errorf("sort: %v", bs)
 	}
 }
+
+func TestProfileDefaultsKeepOvernightSleep(t *testing.T) {
+	p := Profile{TZ: "UTC", WakeMin: 6 * 60, SleepMin: 60}.Defaults()
+	if p.SleepMin != 60 {
+		t.Fatalf("overnight lights-out time changed to %d", p.SleepMin)
+	}
+	if p.LevelAt(24*60+30) != EnergyMed {
+		t.Fatal("overnight energy lookup should accept timeline minutes")
+	}
+}

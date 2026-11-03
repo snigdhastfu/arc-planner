@@ -8,7 +8,7 @@ import { drag } from '../gestures.js';
 import { roughBorder, roughLine, tilt } from '../rough.js';
 import { esc, announce, toast, itemHex, groupOf, squishy, CHECK } from '../dom.js';
 import { pick } from '../copy.js';
-import { burst, stamp, floatDoodle, react, clearFx } from '../fx.js';
+import { burst, stamp, floatDoodle, react, clearFx, clearFinishEffects } from '../fx.js';
 import { pop, chime, scratch, buzz } from '../sound.js';
 import { go } from '../router.js';
 import { markSVG } from '../mark.js';
@@ -27,8 +27,8 @@ const FOCUS_FX = 'focus-card';
 
 // ---- data ---------------------------------------------------------------------
 function todayBlocks() {
-  const k = T.dayKey();
-  return S.plan.blocks.filter((b) => T.dayKey(new Date(b.start)) === k);
+  const k = T.scheduleDayKey(T.now(), S.profile.wakeMin);
+  return S.plan.blocks.filter((b) => T.scheduleDayKey(new Date(b.start), S.profile.wakeMin) === k);
 }
 function focusBlocks() {
   const nowMs = T.nowMs();
@@ -40,15 +40,16 @@ function focusBlocks() {
 function arcNodes() {
   const out = [];
   const groups = new Map();
+  const scheduleDay = T.scheduleDayKey(T.now(), S.profile.wakeMin);
   for (const b of todayBlocks()) {
     if (b.status === 'skipped' || b.status === 'moved') continue;
     const it = itemById(b.itemId);
     if (!it) continue;
     const s = new Date(b.start), e = new Date(b.end);
-    const mid = (T.minOfDay(s) + T.minOfDay(e)) / 2;
+    const mid = (T.scheduleMinute(s, S.profile.wakeMin) + T.scheduleMinute(e, S.profile.wakeMin)) / 2;
     if (b.kind === 'routine') {
       const g = groupOf(it);
-      if (!groups.has(g)) groups.set(g, { id: `grp-${g}`, kind: 'routine', group: g, blocks: [], mid: T.minOfDay(s) });
+      if (!groups.has(g)) groups.set(g, { id: `grp-${g}`, kind: 'routine', group: g, blocks: [], mid: T.scheduleMinute(s, S.profile.wakeMin) });
       groups.get(g).blocks.push({ b, it });
       continue;
     }
@@ -67,6 +68,7 @@ const shortLabel = (s) => (s.length > 12 ? s.slice(0, 11) + '…' : s);
 
 // ---- render ---------------------------------------------------------------------
 export function mount(el) {
+  clearFinishEffects();
   root = el;
   nodes = new Map();
   focusId = null;
@@ -114,6 +116,7 @@ async function mountDesk() {
 }
 
 function unmount() {
+  clearFinishEffects();
   clearFx(FOCUS_FX);
   if (root) root.querySelectorAll('.stamp[data-fx-owner="focus-card"]').forEach((el) => el.remove());
   desk.forEach((d) => d && d.unmount && d.unmount());
@@ -125,6 +128,7 @@ function unmount() {
 
 function update(reason, detail) {
   if (!root) return;
+  clearFinishEffects();
   if (reason === 'profile') {
     const greeting = root.querySelector('[data-greeting]');
     if (greeting) greeting.textContent = S.profile.name && S.profile.name.trim() ? `Hey ${S.profile.name.trim()}` : pick(T.parts(T.now()).hh >= 18 ? 'greetingEvening' : 'greeting');
@@ -160,7 +164,8 @@ function renderDrift(first) {
 function renderArc(first) {
   const svg = root.querySelector('[data-arc]');
   arc = createArc(S.profile);
-  const nowMin = T.minOfDay();
+  let nowMin = T.minOfDay();
+  if (nowMin < arc.wake) nowMin += 1440;
   const past = Math.max(arc.wake, Math.min(arc.sleep, nowMin));
   const np = arc.point(past);
   if (first || !svg.firstChild) {
@@ -241,7 +246,7 @@ function layoutNodes(first) {
   const points = new Map(list.map((n) => [n.id, arc.point(n.mid)]));
   const width = (n) => Math.min(112, Math.max(28, n.label.length * 5.8));
   const importance = (n) => {
-    const distance = Math.abs(n.mid - T.minOfDay());
+    const distance = Math.abs(n.mid - T.scheduleMinute(T.now(), S.profile.wakeMin));
     return (n.block && n.block.id === focusId ? 10000 : 0) + (n.done ? -100 : 0) + (n.kind === 'routine' ? 0 : 10) - distance / 1000;
   };
   const ranked = [...list].sort((a, b) => importance(b) - importance(a));
@@ -561,6 +566,7 @@ async function onDetailClick(e, rec) {
 
 // ---- focus card ------------------------------------------------------------------
 function renderFocus(mode) {
+  clearFinishEffects();
   const zone = root.querySelector('[data-focus-zone]');
   const list = focusBlocks();
   const cur = list[0];
@@ -751,21 +757,21 @@ async function finish(b, how, { vx = 0 } = {}) {
   const it = itemById(b.itemId);
   try {
     if (card && !motion.reduced) {
-      const st = stamp(card, { color: '#7CBB93', label: 'Done', seed: b.id, owner: FOCUS_FX });
+      stamp(card, { color: '#7CBB93', label: 'Done', seed: b.id, size: 58, owner: FOCUS_FX, finishEffect: true });
       const d = card.querySelector('.focus-doodle svg');
       if (d) { set(d, { rotate: 8 }); to(d, { rotate: 0 }, { stiffness: 320, damping: 6 }); }
       const r = card.getBoundingClientRect();
-      burst(r.left + r.width / 2, r.top + r.height * 0.45, { count: 12, seed: b.id, doodles: ['sparkle', it.doodle], owner: FOCUS_FX });
+      burst(r.left + r.width / 2, r.top + r.height * 0.45, { count: 12, seed: b.id, doodles: ['sparkle', it.doodle], owner: FOCUS_FX, finishEffect: true });
       pop(1); setTimeout(chime, 120); buzz(12);
       await wait(520);
       if (card.isConnected && root === bootRoot) {
         await to(card, { x: card.offsetWidth * 1.3, rotate: 16, opacity: 0 }, { stiffness: 160, damping: 20, velocity: { x: Math.max(vx, 400) } });
       }
-      st.remove();
     }
     await blockAction(b.id, 'done');
     announce(`${it.title} finished. ${pick('finished', b.id)}`);
   } finally {
+    clearFinishEffects();
     clearFx(FOCUS_FX);
     if (bootRoot) bootRoot.querySelectorAll('.stamp[data-fx-owner="focus-card"]').forEach((el) => el.remove());
     busy = false;
@@ -815,8 +821,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 function renderShelf() {
   const slot = root.querySelector('[data-shelf]');
   // everything currently sleeping in: any work block, plus today's routines
-  const today = T.dayKey();
-  const sleeping = S.plan.blocks.filter((b) => b.status === 'skipped' && (b.kind === 'work' || (b.kind === 'routine' && T.dayKey(new Date(b.start)) === today)))
+  const today = T.scheduleDayKey(T.now(), S.profile.wakeMin);
+  const sleeping = S.plan.blocks.filter((b) => b.status === 'skipped' && (b.kind === 'work' || (b.kind === 'routine' && T.scheduleDayKey(new Date(b.start), S.profile.wakeMin) === today)))
     .sort((a, b) => new Date(a.start) - new Date(b.start));
   if (!sleeping.length) { slot.innerHTML = ''; return; }
   slot.innerHTML = `<div class="shelf"><div class="shelf-head"><span class="eyebrow" style="color:var(--blush)">Sleeping in</span><span class="m">${esc(pick('sleepingIn'))}</span></div>
@@ -834,14 +840,17 @@ function renderShelf() {
 
 function renderTuck() {
   const slot = root.querySelector('[data-tuck]');
-  const show = T.minOfDay() >= S.profile.sleepMin - 90 && S.items.some((i) => !i.deleted);
+  let nowMin = T.minOfDay();
+  if (nowMin < S.profile.wakeMin) nowMin += 1440;
+  const sleep = S.profile.sleepMin < S.profile.wakeMin ? S.profile.sleepMin + 1440 : S.profile.sleepMin;
+  const show = nowMin >= sleep - 90 && S.items.some((i) => !i.deleted);
   if (!show) { slot.innerHTML = ''; return; }
   if (slot.firstElementChild) return;
   slot.innerHTML = `<button class="pill pill-tuck" type="button">${doodleSVG('moon', 22, '#F7C8D3', { boil: false })}<span>Tuck in</span></button>`;
   const b = slot.firstElementChild;
   roughBorder(b, { color: 'var(--blush)', width: 1.5, radius: 22, seed: 'tuck', draw: true });
   squishy(b);
-  b.addEventListener('click', async () => { const { openTuckIn } = await import('../postcard.js'); openTuckIn(T.dayKey(), b); });
+  b.addEventListener('click', async () => { const { openTuckIn } = await import('../postcard.js'); openTuckIn(T.scheduleDayKey(T.now(), S.profile.wakeMin), b); });
 }
 
 // ---- ticks ---------------------------------------------------------------------------

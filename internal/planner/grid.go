@@ -8,7 +8,7 @@ import (
 
 const slotMin = 5
 
-// day is one local day of the 5-minute slot grid between WakeMin and SleepMin.
+// day is one waking-day of the 5-minute slot grid between wake and lights-out.
 type day struct {
 	idx  int
 	key  string
@@ -25,8 +25,7 @@ type day struct {
 
 func (d *day) sleep() int { return d.wake + d.n*slotMin }
 
-// minuteOf returns minutes from this day's local midnight (wall clock), or a
-// large negative/positive sentinel when t is on an earlier/later local day.
+// minuteOf maps the following calendar day onto minutes 1440..2879.
 func (d *day) minuteOf(t time.Time, loc *time.Location) int {
 	lt := t.In(loc)
 	y, m, dd := lt.Date()
@@ -37,6 +36,9 @@ func (d *day) minuteOf(t time.Time, loc *time.Location) int {
 	case a.Before(b):
 		return -1 << 30
 	case a.After(b):
+		if a.Equal(b.AddDate(0, 0, 1)) {
+			return 24*60 + lt.Hour()*60 + lt.Minute()
+		}
 		return 1 << 30
 	}
 	return lt.Hour()*60 + lt.Minute()
@@ -98,7 +100,7 @@ func (e *engine) markTimes(start, end time.Time) {
 			a = 0
 		}
 		if b > 1<<29 {
-			b = 24 * 60
+			b = d.sleep()
 		}
 		d.mark(a, b)
 	}
@@ -106,7 +108,11 @@ func (e *engine) markTimes(start, end time.Time) {
 
 // dayOf returns the grid day containing t, or nil.
 func (e *engine) dayOf(t time.Time) *day {
-	if i, ok := e.dayIdx[model.DayKey(t, e.loc)]; ok {
+	key := model.DayKey(t, e.loc)
+	if e.p.SleepMin < e.p.WakeMin && model.MinOfDay(t, e.loc) < e.p.WakeMin {
+		key = t.In(e.loc).AddDate(0, 0, -1).Format("2006-01-02")
+	}
+	if i, ok := e.dayIdx[key]; ok {
 		return e.days[i]
 	}
 	return nil
